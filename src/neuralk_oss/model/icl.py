@@ -52,22 +52,30 @@ class ICLearning(nn.Module):
             context = block(context)
         return states
 
-    def forward(self, R: Tensor, context: list[Tensor]) -> Tensor:
-        """Outputs ``(B, T, out_dim)`` of the query rows ``R``, each block's queries attending to its context state."""
-        for block, keys in zip(self.tf_icl.blocks, context, strict=True):
-            if self.kv_heads is None:
-                R = block(R, keys, keys)
-            else:
-                R = self._reduced_heads(block, R, keys)
-        return self._head(R)
+    def forward(self, R: Tensor, context: list[Tensor], chunk_size: int | None = None) -> Tensor:
+        """Outputs ``(B, T, out_dim)`` of the query rows ``R``, each block's queries attending to its context state.
 
-    def _reduced_heads(self, block: MultiheadAttentionBlock, q: Tensor, kv: Tensor) -> Tensor:
-        """``block`` with its queries attending through the reduced key/value heads."""
-        block.attn.query_kv_heads = self.kv_heads
-        try:
-            return block(q, kv, kv)
-        finally:
-            block.attn.query_kv_heads = None
+        Each block's keys and values are computed once, then the query rows
+        attend to them ``chunk_size`` rows at a time (all at once by default).
+        """
+        if R.shape[1] == 0:
+            return self._head(R)
+        step = chunk_size or R.shape[1]
+        for block, keys in zip(self.tf_icl.blocks, context, strict=True):
+            block.attn.query_kv_heads = self.kv_heads
+            try:
+                key_value = block.key_value(keys)
+                R = torch.cat(
+                    [
+                        block.attend(R[:, t : t + step], key_value)
+                        for t in range(0, R.shape[1], step)
+                    ],
+                    dim=1,
+                )
+            finally:
+                block.attn.query_kv_heads = None
+            del key_value
+        return self._head(R)
 
     def _head(self, x: Tensor) -> Tensor:
         if not self.fp32_head:

@@ -134,20 +134,38 @@ class Seldon(nn.Module):
         return Context(mean=mean, induced=induced, icl=self.icl_predictor.encode_context(R, y))
 
     def predict_query(
-        self, X: Tensor, context: Context, categorical_mask: Tensor | None = None
+        self,
+        X: Tensor,
+        context: Context,
+        categorical_mask: Tensor | None = None,
+        chunk_size: int | None = None,
     ) -> Tensor:
         """Raw logits (``max_classes`` wide) or quantiles (``num_quantiles`` wide) of the query rows ``X`` ``(B, T, H)``: ``(B, T, out_dim)``.
 
-        Each query row is computed alone, so the rows may come in any chunks.
+        Each query row is computed alone: the column and row stages run
+        ``chunk_size`` rows at a time (all at once by default), and the ICL
+        stage computes each block's context keys and values once for them all.
         """
-        col, row = self.col_embedder, self.row_interactor
         categorical_mask = self._categorical_mask(X, categorical_mask)
+        step = chunk_size or max(X.shape[1], 1)
+        R = torch.cat(
+            [
+                self._represent(X[:, t : t + step], context, categorical_mask)
+                for t in range(0, max(X.shape[1], 1), step)
+            ],
+            dim=1,
+        )
+        return self.icl_predictor(R, context["icl"], chunk_size)
+
+    def _represent(self, X: Tensor, context: Context, categorical_mask: Tensor) -> Tensor:
+        """The row representations ``(B, T, icl_width)`` of the query rows ``X``, through the column and row stages."""
+        col, row = self.col_embedder, self.row_interactor
         state = row.state(col.embed(X, context["mean"], categorical_mask))
         for i, (block, summary) in enumerate(
             zip(col.tf_col.blocks, context["induced"], strict=True)
         ):
             state = self._after_column_block(i, state, block.expand(self._cells(state), summary))
-        return self.icl_predictor(row(state), context["icl"])
+        return row(state)
 
     def forward(
         self,
@@ -219,9 +237,13 @@ class Seldon(nn.Module):
         version = config.pop("model_version", cls.VERSION)
         if version != cls.VERSION:
             raise ValueError(f"checkpoint of Seldon {version}, this is Seldon {cls.VERSION}")
-        model = cls(SeldonConfig.model_validate(config))
-        model.load_state_dict(load_file(path / WEIGHTS_NAME, device=str(device)), strict=True)
-        return model.to(device).eval()
+        # Built without storage, then given the checkpoint's tensors: no
+        # random initialization to overwrite, and the weights load onto device.
+        with torch.device("meta"):
+            model = cls(SeldonConfig.model_validate(config))
+        state = load_file(path / WEIGHTS_NAME, device=str(device))
+        model.load_state_dict(state, strict=True, assign=True)
+        return model.eval()
 
     def save_pretrained(self, path: str | os.PathLike) -> None:
         """Save the model in the directory ``path`` as ``from_pretrained`` reads it."""

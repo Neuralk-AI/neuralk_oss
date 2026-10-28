@@ -112,6 +112,38 @@ class MultiheadAttention(nn.MultiheadAttention):
         q = self._scale_q(q, key.shape[-2])
         return self._project_out(self._core(q, k, v))
 
+    def key_value(self, key: Tensor) -> tuple[Tensor, Tensor]:
+        """The keys and values of the rows ``key`` ``(..., src_len, E)``, per head and ready to score: what ``attend`` reads.
+
+        The same computation as ``forward``'s for ``key`` and ``value`` the same
+        rows, done once for any number of query calls.
+        """
+        E = self.embed_dim
+        bias = None if self.in_proj_bias is None else self.in_proj_bias[E:]
+        kv = F.linear(key, self.in_proj_weight[E:], bias)
+        kv = kv.unflatten(-1, (2, E)).unsqueeze(0).transpose(0, -2).squeeze(-2).contiguous()
+        kv_heads = self.query_kv_heads
+        k, v = (self._split_heads(t, contiguous=kv_heads is None) for t in (kv[0], kv[1]))
+        if kv_heads is not None:
+            k, v = k[..., :kv_heads, :, :].contiguous(), v[..., :kv_heads, :, :].contiguous()
+        k = self._head_norm(k)
+        if torch.is_autocast_enabled(k.device.type):
+            # As _sdpa would cast them on every call.
+            dtype = torch.get_autocast_dtype(k.device.type)
+            k, v = k.to(dtype), v.to(dtype)
+        return k, v
+
+    def attend(self, query: Tensor, key_value: tuple[Tensor, Tensor]) -> Tensor:
+        """Attention of ``query`` ``(..., tgt_len, E)`` over keys and values from ``key_value``: ``forward``'s output for their rows."""
+        k, v = key_value
+        E = self.embed_dim
+        bias = None if self.in_proj_bias is None else self.in_proj_bias[:E]
+        q = self._split_heads(F.linear(query, self.in_proj_weight[:E], bias), contiguous=False)
+        if self.query_kv_heads is not None:
+            q = q.contiguous()
+        q = self._scale_q(self._head_norm(q), k.shape[-2])
+        return self._project_out(self._core(q, k, v))
+
     def _split_heads(self, x: Tensor, contiguous: bool = True) -> Tensor:
         """(..., len, embed_dim) -> (..., num_heads, len, head_dim)."""
         heads = x.view(*x.shape[:-1], self.num_heads, self.head_dim).transpose(-3, -2)
@@ -262,6 +294,18 @@ class MultiheadAttentionBlock(nn.Module):
             v = q if v is None else v
         kv = self.norm_kv(k)
         attn = self.attn(self._prenorm(q), kv, kv if v is k else self.norm_kv(v))
+        return self._finish(q, attn)
+
+    def key_value(self, k: Tensor) -> tuple[Tensor, Tensor]:
+        """The attention's keys and values of the rows ``k``, computed once for any number of ``attend`` calls."""
+        return self.attn.key_value(self.norm_kv(k))
+
+    def attend(self, q: Tensor, key_value: tuple[Tensor, Tensor]) -> Tensor:
+        """``forward(q, k, k)`` for the rows ``k`` of ``key_value(k)``."""
+        return self._finish(q, self.attn.attend(self._prenorm(q), key_value))
+
+    def _finish(self, q: Tensor, attn: Tensor) -> Tensor:
+        """The residual around attention, then the feedforward with its residual."""
         x = q + attn
         return x + self.linear2(F.gelu(self.linear1(self.norm2(x))))
 

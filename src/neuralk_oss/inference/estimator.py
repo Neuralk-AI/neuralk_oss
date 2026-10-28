@@ -134,15 +134,6 @@ class SeldonICL(ICLModel):
         return out.view(*lead, *out.shape[-2:])
 
     def _predict(self, X: Tensor, context: dict[str, Any], mask: Tensor) -> Tensor:
-        step = self.query_chunk_size
         if X.shape[1] == 0:
             return X.new_zeros((X.shape[0], 0, self.model.max_classes))
-        if X.shape[1] <= step:
-            return self.model.predict_query(X, context, mask)
-        return torch.cat(
-            [
-                self.model.predict_query(X[:, t0 : t0 + step], context, mask)
-                for t0 in range(0, X.shape[1], step)
-            ],
-            dim=1,
-        )
+        return self.model.predict_query(X, context, mask, chunk_size=self.query_chunk_size)
