@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor, nn
 
+from neuralk_oss.model import kernels
 from neuralk_oss.model.attention import BlockStack, MultiheadAttentionBlock, make_norm
 from neuralk_oss.model.config import BlockConfig, SeldonConfig
 
@@ -79,6 +80,6 @@ class ICLearning(nn.Module):
 
     def _head(self, x: Tensor) -> Tensor:
         if not self.fp32_head:
-            return self.decoder(self.ln(x))
+            return self.decoder(kernels.norm(self.ln, x))
         with torch.autocast(x.device.type, enabled=False):
             return self.decoder(self.ln(x.float()))

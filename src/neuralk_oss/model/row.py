@@ -7,6 +7,7 @@ from collections.abc import Callable
 import torch
 from torch import Tensor, nn
 
+from neuralk_oss.model import kernels
 from neuralk_oss.model.attention import BlockStack, MultiheadAttentionBlock, make_norm
 from neuralk_oss.model.config import BlockConfig, SeldonConfig
 
@@ -54,7 +55,7 @@ class RowInteraction(nn.Module):
         last = self.tf_row.blocks[-1]
         query = state[..., : self.num_cls, :]
         x = self.over_row_slices(last, query, state, state)
-        return self.project(self.out_ln(x).flatten(-2))
+        return self.project(kernels.norm(self.out_ln, x).flatten(-2))
 
     @staticmethod
     def over_row_slices(fn: Callable[..., Tensor], x: Tensor, *args: Tensor) -> Tensor:

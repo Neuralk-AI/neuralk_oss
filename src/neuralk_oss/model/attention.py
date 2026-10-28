@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.backends.cuda import SDPAParams, can_use_flash_attention, flash_sdp_enabled
 
+from neuralk_oss.model import kernels
 from neuralk_oss.model.config import BlockConfig
 
 ROPE_THETA = 100_000
@@ -107,8 +108,18 @@ class MultiheadAttention(nn.MultiheadAttention):
         """
         if key.shape != value.shape:
             raise ValueError(f"key shape {key.shape} does not match value shape {value.shape}")
-        q, k, v = self._project_qkv(query, key, value)
-        q, k = self._qk_transform(q, k)
+        shared = self.shared_rows(query)
+        q, k, v = F._in_projection_packed(
+            query if shared is None else shared,
+            key,
+            value,
+            self.in_proj_weight,
+            self.in_proj_bias,
+        )
+        q = self._heads(q, norm=True)
+        if shared is not None:
+            q = q.expand(*query.shape[:-2], *q.shape)
+        k, v = self._kv_heads(self._heads(k, norm=True), self._heads(v, norm=False))
         q = self._scale_q(q, key.shape[-2])
         return self._project_out(self._core(q, k, v))
 
@@ -122,11 +133,7 @@ class MultiheadAttention(nn.MultiheadAttention):
         bias = None if self.in_proj_bias is None else self.in_proj_bias[E:]
         kv = F.linear(key, self.in_proj_weight[E:], bias)
         kv = kv.unflatten(-1, (2, E)).unsqueeze(0).transpose(0, -2).squeeze(-2).contiguous()
-        kv_heads = self.query_kv_heads
-        k, v = (self._split_heads(t, contiguous=kv_heads is None) for t in (kv[0], kv[1]))
-        if kv_heads is not None:
-            k, v = k[..., :kv_heads, :, :].contiguous(), v[..., :kv_heads, :, :].contiguous()
-        k = self._head_norm(k)
+        k, v = self._kv_heads(self._heads(kv[0], norm=True), self._heads(kv[1], norm=False))
         if torch.is_autocast_enabled(k.device.type):
             # As _sdpa would cast them on every call.
             dtype = torch.get_autocast_dtype(k.device.type)
@@ -138,54 +145,23 @@ class MultiheadAttention(nn.MultiheadAttention):
         k, v = key_value
         E = self.embed_dim
         bias = None if self.in_proj_bias is None else self.in_proj_bias[:E]
-        q = self._split_heads(F.linear(query, self.in_proj_weight[:E], bias), contiguous=False)
-        if self.query_kv_heads is not None:
-            q = q.contiguous()
-        q = self._scale_q(self._head_norm(q), k.shape[-2])
+        q = self._heads(F.linear(query, self.in_proj_weight[:E], bias), norm=True)
+        q = self._scale_q(q, k.shape[-2])
         return self._project_out(self._core(q, k, v))
 
-    def _split_heads(self, x: Tensor, contiguous: bool = True) -> Tensor:
-        """(..., len, embed_dim) -> (..., num_heads, len, head_dim)."""
-        heads = x.view(*x.shape[:-1], self.num_heads, self.head_dim).transpose(-3, -2)
-        return heads.contiguous() if contiguous else heads
+    def _heads(self, x: Tensor, norm: bool) -> Tensor:
+        """``(..., len, embed_dim)`` -> ``(..., num_heads, len, head_dim)``; a query or key RoPE-rotated (row blocks) then RMS-normed per head."""
+        x = x.view(*x.shape[:-1], self.num_heads, self.head_dim)
+        if norm:
+            x = kernels.head_norm(x, HEAD_NORM_EPS, self.inv_freq)
+        return x.transpose(-3, -2)
 
-    def _project_qkv(
-        self, query: Tensor, key: Tensor, value: Tensor
-    ) -> tuple[Tensor, Tensor, Tensor]:
-        """Joint in-projection, split into heads; under ``query_kv_heads`` the keys and values keep their first heads only."""
-        shared = self.shared_rows(query)
+    def _kv_heads(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
+        """The keys and values, cut to their first ``query_kv_heads`` heads when set."""
         kv = self.query_kv_heads
-        q, k, v = F._in_projection_packed(
-            query if shared is None else shared,
-            key,
-            value,
-            self.in_proj_weight,
-            self.in_proj_bias,
-        )
-        q, k, v = (self._split_heads(t, contiguous=kv is None) for t in (q, k, v))
-        if kv is not None:
-            k, v = k[..., :kv, :, :], v[..., :kv, :, :]
-            q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
-        if shared is not None:
-            q = q.expand(*query.shape[:-2], *q.shape)
-        return q, k, v
-
-    def _qk_transform(self, q: Tensor, k: Tensor) -> tuple[Tensor, Tensor]:
-        """RoPE (row blocks), then the per-head RMSNorm, on the per-head queries and keys."""
-        return self._head_norm(q), self._head_norm(k)
-
-    def _head_norm(self, x: Tensor) -> Tensor:
-        if self.inv_freq is not None:
-            x = self._rotate(x)
-        return F.rms_norm(x, (self.head_dim,), None, HEAD_NORM_EPS)
-
-    def _rotate(self, x: Tensor) -> Tensor:
-        """``x`` of shape ``(..., len, head_dim)`` rotated by its position along ``len``, half the channels against the other half."""
-        seq = torch.arange(x.size(-2), device=x.device, dtype=torch.float32)
-        freq = seq.view(-1, 1) * self.inv_freq.view(1, -1)
-        sin, cos = freq.sin().to(x.dtype), freq.cos().to(x.dtype)
-        x1, x2 = x.split(sin.size(-1), dim=-1)
-        return torch.cat((x1 * cos - x2 * sin, x2 * cos + x1 * sin), dim=-1)
+        if kv is None:
+            return k, v
+        return k[..., :kv, :, :], v[..., :kv, :, :]
 
     def _scale_q(self, q: Tensor, n: int) -> Tensor:
         """``q`` scaled for ``n`` attended keys."""
@@ -216,8 +192,8 @@ class MultiheadAttention(nn.MultiheadAttention):
     def _sdpa(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
         """The attention kernel on the flattened ``(B, nh, L, hs)`` tensors, grouped-query when k has fewer heads than q."""
         if torch.is_autocast_enabled(q.device.type):
-            # The head norms return q and k in fp32 under autocast; the kernel
-            # choice must see the autocast dtype.
+            # PyTorch's head norms return q and k in fp32 under autocast; the
+            # kernel choice must see the autocast dtype.
             dtype = torch.get_autocast_dtype(q.device.type)
             q, k, v = q.to(dtype), k.to(dtype), v.to(dtype)
         if k.shape[-3] != q.shape[-3]:
@@ -292,13 +268,13 @@ class MultiheadAttentionBlock(nn.Module):
         else:
             k = q if k is None else k
             v = q if v is None else v
-        kv = self.norm_kv(k)
-        attn = self.attn(self._prenorm(q), kv, kv if v is k else self.norm_kv(v))
+        kv = kernels.norm(self.norm_kv, k)
+        attn = self.attn(self._prenorm(q), kv, kv if v is k else kernels.norm(self.norm_kv, v))
         return self._finish(q, attn)
 
     def key_value(self, k: Tensor) -> tuple[Tensor, Tensor]:
         """The attention's keys and values of the rows ``k``, computed once for any number of ``attend`` calls."""
-        return self.attn.key_value(self.norm_kv(k))
+        return self.attn.key_value(kernels.norm(self.norm_kv, k))
 
     def attend(self, q: Tensor, key_value: tuple[Tensor, Tensor]) -> Tensor:
         """``forward(q, k, k)`` for the rows ``k`` of ``key_value(k)``."""
@@ -307,14 +283,14 @@ class MultiheadAttentionBlock(nn.Module):
     def _finish(self, q: Tensor, attn: Tensor) -> Tensor:
         """The residual around attention, then the feedforward with its residual."""
         x = q + attn
-        return x + self.linear2(F.gelu(self.linear1(self.norm2(x))))
+        return x + self.linear2(F.gelu(self.linear1(kernels.norm(self.norm2, x))))
 
     def _prenorm(self, x: Tensor) -> Tensor:
         """The query's norm, computed once for rows shared over the batch dims (the inducing points)."""
         shared = MultiheadAttention.shared_rows(x)
         if shared is None:
-            return self.norm1(x)
-        return self.norm1(shared).expand(x.shape)
+            return kernels.norm(self.norm1, x)
+        return kernels.norm(self.norm1, shared).expand(x.shape)
 
 
 class InducedSelfAttentionBlock(nn.Module):
