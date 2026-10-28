@@ -10,9 +10,15 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Neuralk-AI" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    "torch>=2.4",
+    "numpy",
+    "pandas>=2.2,<3",
+    "pydantic>=2",
+    "safetensors",
+    # Pinned: the preprocessing and ensembling Seldon was evaluated with.
+    "structured-data-models @ git+https://github.com/NVIDIA/structured-data-models.git@98f61289c7a4e1bce3b33771223ac2e123b63f19",
+    "torch>=2.7",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -29,6 +35,9 @@ dev = [
     "ruff>=0.6",
 ]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/neuralk_oss"]
 
@@ -37,7 +46,9 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+# The formatter wraps code; docstring summaries stay on one line.
+ignore = ["E501"]

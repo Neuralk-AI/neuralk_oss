@@ -1,5 +1,6 @@
-"""Model definitions and checkpoint loading."""
+"""Seldon's architecture and its checkpoints."""
 
-from neuralk_oss.model.loading import load_model
+from neuralk_oss.model.config import SeldonConfig
+from neuralk_oss.model.seldon import Seldon
 
-__all__ = ["load_model"]
+__all__ = ["Seldon", "SeldonConfig"]

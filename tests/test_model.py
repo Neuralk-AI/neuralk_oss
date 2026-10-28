@@ -1,0 +1,68 @@
+import pytest
+import torch
+
+from neuralk_oss import Seldon
+from tests.conftest import tiny_config
+
+
+def _table(B=2, T=40, H=5, train_size=30, classes=3):
+    g = torch.Generator().manual_seed(0)
+    X = torch.randn(B, T, H, generator=g)
+    X[torch.rand(B, T, H, generator=g) < 0.1] = float("nan")
+    y = torch.randint(0, classes, (B, train_size), generator=g)
+    mask = torch.rand(B, H, generator=g) < 0.4
+    return X, y, train_size, mask
+
+
+@torch.no_grad()
+def test_forward_shape_and_finite(tiny_model):
+    X, y, ts, mask = _table()
+    out = tiny_model(X, y, ts, categorical_mask=mask)
+    assert out.shape == (2, 10, 10)
+    assert out.isfinite().all()
+
+
+@torch.no_grad()
+def test_query_rows_are_independent(tiny_model):
+    X, y, ts, mask = _table()
+    context = tiny_model.encode_context(X[:, :ts], y, mask)
+    whole = tiny_model.predict_query(X[:, ts:], context, mask)
+    rows = torch.cat(
+        [tiny_model.predict_query(X[:, t : t + 3], context, mask) for t in range(ts, 40, 3)], 1
+    )
+    torch.testing.assert_close(rows, whole, rtol=1e-5, atol=1e-5)
+
+
+@torch.no_grad()
+def test_query_does_not_change_context(tiny_model):
+    X, y, ts, mask = _table()
+    out = tiny_model(X, y, ts, categorical_mask=mask)
+    X2 = X.clone()
+    X2[:, ts + 1 :] = torch.randn_like(X2[:, ts + 1 :])
+    out2 = tiny_model(X2, y, ts, categorical_mask=mask)
+    torch.testing.assert_close(out2[:, 0], out[:, 0], rtol=1e-5, atol=1e-5)
+
+
+@torch.no_grad()
+def test_reduced_kv_heads_run():
+    model = Seldon(tiny_config(num_icl_key_value_heads_for_query=2)).eval()
+    X, y, ts, mask = _table()
+    assert model(X, y, ts, categorical_mask=mask).isfinite().all()
+
+
+def test_too_many_classes(tiny_model):
+    X, y, ts, mask = _table(classes=3)
+    y[0, 0] = 10
+    with pytest.raises(ValueError, match="max_classes"):
+        tiny_model.encode_context(X[:, :ts], y, mask)
+
+
+@torch.no_grad()
+def test_save_load_roundtrip(tiny_model, tmp_path):
+    tiny_model.save_pretrained(tmp_path)
+    loaded = Seldon.from_pretrained(tmp_path)
+    assert not loaded.training
+    X, y, ts, mask = _table()
+    torch.testing.assert_close(
+        loaded(X, y, ts, categorical_mask=mask), tiny_model(X, y, ts, categorical_mask=mask)
+    )
