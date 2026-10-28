@@ -4,19 +4,26 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import sdm
 import torch
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from neuralk_oss.inference.estimator import SeldonICL
 from neuralk_oss.inference.recipe import SeldonRecipe
 from neuralk_oss.model import Seldon
 
 _TARGET = "target"
+# Every attention kernel PyTorch has but cuDNN's (see ``cudnn_attention``).
+_NON_CUDNN_ATTENTION = [
+    SDPBackend.FLASH_ATTENTION,
+    SDPBackend.EFFICIENT_ATTENTION,
+    SDPBackend.MATH,
+]
 
 
 class SeldonClassifier:
@@ -40,6 +47,11 @@ class SeldonClassifier:
         member its own random subset.
     amp : bool, default=True
         float16 autocast on CUDA; False runs in float32.
+    cudnn_attention : bool, default=False
+        Let PyTorch's attention use cuDNN's kernel. It is faster once a table
+        shape has run, but builds a plan per new shape, seconds each, which a
+        table fitted once pays in full; by default the FlashAttention and
+        memory-efficient kernels run instead.
     random_state : int, default=0
         Seed of the context subsets and of sdm's per-member preprocessing.
     recipe : SeldonRecipe, optional
@@ -57,6 +69,7 @@ class SeldonClassifier:
         max_context_size: int = 200_000,
         amp: bool = True,
         random_state: int = 0,
+        cudnn_attention: bool = False,
         recipe: SeldonRecipe | None = None,
         query_chunk_size: int = 8192,
     ) -> None:
@@ -66,6 +79,7 @@ class SeldonClassifier:
         self.n_estimators = n_estimators
         self.max_context_size = max_context_size
         self.amp = amp
+        self.cudnn_attention = cudnn_attention
         self.random_state = random_state
         self.estimator = SeldonICL(model, recipe, query_chunk_size).to(self.device)
 
@@ -134,9 +148,11 @@ class SeldonClassifier:
     @contextmanager
     def _inference(self) -> Iterator[None]:
         amp = self.amp and self.device.type == "cuda"
+        attention = nullcontext() if self.cudnn_attention else sdpa_kernel(_NON_CUDNN_ATTENTION)
         with (
             torch.inference_mode(),
             torch.autocast(self.device.type, dtype=torch.float16, enabled=amp),
+            attention,
         ):
             yield
 
