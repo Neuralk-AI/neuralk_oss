@@ -11,7 +11,7 @@ one forward pass, with no gradient step.
 ```python
 from neuralk_oss import SeldonClassifier
 
-clf = SeldonClassifier.from_pretrained("seldon-small")  # directory: config.json + model.safetensors
+clf = SeldonClassifier.from_pretrained("seldon-small-classifier")  # directory: config.json + model.safetensors
 clf.fit(X_train, y_train)            # pandas DataFrame (or array) and labels
 proba = clf.predict_proba(X_test)    # (n_rows, n_classes), columns in clf.classes_ order
 ```
@@ -39,7 +39,7 @@ class MyRecipe(SeldonRecipe):
     def numerical_transforms(self):
         return [sp.Identity(), sp.RankGaussian(max_knots=self.rank_gaussian_knots)]
 
-clf = SeldonClassifier.from_pretrained("seldon-small", recipe=MyRecipe())
+clf = SeldonClassifier.from_pretrained("seldon-small-classifier", recipe=MyRecipe())
 ```
 
 ### The model alone
@@ -47,7 +47,7 @@ clf = SeldonClassifier.from_pretrained("seldon-small", recipe=MyRecipe())
 ```python
 from neuralk_oss import Seldon
 
-model = Seldon.from_pretrained("seldon-small")
+model = Seldon.from_pretrained("seldon-small-classifier")
 context = model.encode_context(X_context, y_context, categorical_mask)  # (B, T, H), (B, T), (B, H)
 logits = model.predict_query(X_query, context, categorical_mask)       # (B, T_query, 10)
 ```
