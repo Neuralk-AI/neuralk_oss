@@ -12,6 +12,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Neuralk-AI" }]
 requires-python = ">=3.11"
 dependencies = [
+    "huggingface_hub",
     "numpy",
     "pandas>=2.2,<3",
     "pydantic>=2",

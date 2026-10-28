@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 import torch
+from huggingface_hub import snapshot_download
 from safetensors.torch import load_file, save_file
 from torch import Tensor, nn
 
@@ -36,6 +37,8 @@ from neuralk_oss.model.row import RowInteraction
 
 CONFIG_NAME = "config.json"
 WEIGHTS_NAME = "model.safetensors"
+# The Hugging Face repository of the released checkpoints, one directory each.
+HUB_REPO = "Neuralk-AI/seldon"
 
 
 class Context(TypedDict):
@@ -181,9 +184,37 @@ class Seldon(nn.Module):
         return state
 
     @classmethod
-    def from_pretrained(cls, path: str | os.PathLike, device: str | torch.device = "cpu") -> Seldon:
-        """The model saved in the directory ``path`` (``config.json`` and ``model.safetensors``), loaded strictly, in eval mode."""
-        path = Path(path)
+    def from_pretrained(
+        cls,
+        name_or_path: str | os.PathLike,
+        *,
+        subfolder: str | None = None,
+        revision: str | None = None,
+        token: str | None = None,
+        device: str | torch.device = "cpu",
+    ) -> Seldon:
+        """A saved model (``config.json`` and ``model.safetensors``), loaded strictly, in eval mode.
+
+        Parameters
+        ----------
+        name_or_path : str or PathLike
+            A local directory; else a checkpoint name of ``HUB_REPO``, such as
+            ``"seldon-small-classifier"``; else a Hugging Face repository id
+            (``"org/repo"``). A checkpoint on the Hub is downloaded once into
+            the Hugging Face cache.
+        subfolder : str, optional
+            The checkpoint's directory inside the local directory or the
+            repository.
+        revision : str, optional
+            A branch, tag or commit of the repository; its default branch by
+            default.
+        token : str, optional
+            A Hugging Face token, for a private repository; the logged-in
+            one (``hf auth login``) by default.
+        device : str or torch.device, default="cpu"
+            Device of the weights.
+        """
+        path = resolve_checkpoint(name_or_path, subfolder=subfolder, revision=revision, token=token)
         config = json.loads((path / CONFIG_NAME).read_text())
         version = config.pop("model_version", cls.VERSION)
         if version != cls.VERSION:
@@ -200,3 +231,37 @@ class Seldon(nn.Module):
         (path / CONFIG_NAME).write_text(json.dumps(config, indent=2) + "\n")
         state = {key: value.detach().contiguous() for key, value in self.state_dict().items()}
         save_file(state, path / WEIGHTS_NAME, metadata={"format": "pt"})
+
+
+def resolve_checkpoint(
+    name_or_path: str | os.PathLike,
+    *,
+    subfolder: str | None = None,
+    revision: str | None = None,
+    token: str | None = None,
+) -> Path:
+    """The local directory of a checkpoint, downloaded from the Hub when ``name_or_path`` is not a local directory.
+
+    A name without ``/`` is a checkpoint of ``HUB_REPO``: its ``subfolder``.
+    """
+    local = Path(name_or_path) / (subfolder or "")
+    if local.is_dir():
+        return local
+    name = str(name_or_path)
+    if "/" in name:
+        repo_id = name
+    elif subfolder is None:
+        repo_id, subfolder = HUB_REPO, name
+    else:
+        raise ValueError(f"{name!r} is neither a local directory nor a Hugging Face repository id")
+    prefix = f"{subfolder}/" if subfolder else ""
+    root = snapshot_download(
+        repo_id,
+        revision=revision,
+        token=token,
+        allow_patterns=[prefix + CONFIG_NAME, prefix + WEIGHTS_NAME],
+    )
+    path = Path(root) / (subfolder or "")
+    if not (path / CONFIG_NAME).is_file():
+        raise FileNotFoundError(f"no Seldon checkpoint at {repo_id}/{prefix}")
+    return path

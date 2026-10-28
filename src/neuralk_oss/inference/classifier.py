@@ -70,9 +70,20 @@ class SeldonClassifier:
         self.estimator = SeldonICL(model, recipe, query_chunk_size).to(self.device)
 
     @classmethod
-    def from_pretrained(cls, path: str | os.PathLike, **kwargs: Any) -> SeldonClassifier:
-        """The classifier of the model saved in the directory ``path``; ``kwargs`` are the constructor's."""
-        return cls(Seldon.from_pretrained(path), **kwargs)
+    def from_pretrained(
+        cls,
+        name_or_path: str | os.PathLike,
+        *,
+        subfolder: str | None = None,
+        revision: str | None = None,
+        token: str | None = None,
+        **kwargs: Any,
+    ) -> SeldonClassifier:
+        """The classifier of a saved model: a local directory, a checkpoint name such as ``"seldon-small-classifier"``, or a Hub repository (see ``Seldon.from_pretrained``); ``kwargs`` are the constructor's."""
+        model = Seldon.from_pretrained(
+            name_or_path, subfolder=subfolder, revision=revision, token=token
+        )
+        return cls(model, **kwargs)
 
     def fit(self, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> SeldonClassifier:
         """Keep ``X`` and ``y`` as the context of every member."""

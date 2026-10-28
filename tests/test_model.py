@@ -66,3 +66,38 @@ def test_save_load_roundtrip(tiny_model, tmp_path):
     torch.testing.assert_close(
         loaded(X, y, ts, categorical_mask=mask), tiny_model(X, y, ts, categorical_mask=mask)
     )
+
+
+def test_from_pretrained_hub_names(tiny_model, tmp_path, monkeypatch):
+    from neuralk_oss.model import seldon
+
+    tiny_model.save_pretrained(tmp_path / "hub" / "seldon-tiny-classifier")
+    calls = []
+
+    def fake_download(repo_id, *, revision, token, allow_patterns):
+        calls.append((repo_id, revision, allow_patterns))
+        return str(tmp_path / "hub")
+
+    monkeypatch.setattr(seldon, "snapshot_download", fake_download)
+    monkeypatch.chdir(tmp_path)
+    # A bare name is a checkpoint of the default repository.
+    Seldon.from_pretrained("seldon-tiny-classifier")
+    # A repository id, with the checkpoint's subfolder and a revision.
+    Seldon.from_pretrained("org/repo", subfolder="seldon-tiny-classifier", revision="v1")
+    assert calls == [
+        (
+            seldon.HUB_REPO,
+            None,
+            ["seldon-tiny-classifier/config.json", "seldon-tiny-classifier/model.safetensors"],
+        ),
+        (
+            "org/repo",
+            "v1",
+            ["seldon-tiny-classifier/config.json", "seldon-tiny-classifier/model.safetensors"],
+        ),
+    ]
+    # A local directory is read in place.
+    Seldon.from_pretrained(tmp_path / "hub", subfolder="seldon-tiny-classifier")
+    assert len(calls) == 2
+    with pytest.raises(FileNotFoundError):
+        Seldon.from_pretrained("seldon-missing-classifier")
