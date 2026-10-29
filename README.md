@@ -74,28 +74,6 @@ context = model.encode_context(X_context, y_context, categorical_mask)  # (B, T,
 logits = model.predict_query(X_query, context, categorical_mask)  # (B, T_query, 10)
 ```
 
-## Layout
+## Contributing
 
-```
-src/neuralk_oss/
-├── model/       # Seldon's architecture, config and checkpoint format
-└── inference/   # sdm estimator, preprocessing recipe, scikit-learn style classifier
-tests/
-```
-
-## Development
-
-With [uv](https://docs.astral.sh/uv/):
-
-```bash
-uv sync
-uv run pytest
-uv run ruff check . && uv run ruff format --check .
-```
-
-`tests/test_golden.py` compares the outputs of tiny random-weight checkpoints
-(`tests/golden/`) to saved references. After an intended change of outputs,
-regenerate them with `UPDATE_GOLDEN=1 uv run pytest tests/test_golden.py` and
-commit the new `tests/golden/expected/`. With CUDA, the same cases also run on
-the GPU in float16 autocast; the classifier's CUDA references
-(`tests/golden/expected/cuda/`) are only regenerated on a CUDA machine.
+See [CONTRIBUTING.md](CONTRIBUTING.md): layout, development and versions.
