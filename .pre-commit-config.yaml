@@ -1,0 +1,8 @@
+# Same ruff as uv.lock (`uv run ruff --version`); bump both together.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
