@@ -1,3 +1,5 @@
+![Neuralk, the predictive AI company](assets/banner.png)
+
 # Neuralk OSS
 
 Neuralk-AI open-source models.

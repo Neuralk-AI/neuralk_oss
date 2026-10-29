@@ -51,8 +51,8 @@ select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
 
 # GPU test environments: `uvx --with tox-uv tox` on a machine with CUDA.
-# gpu-ours runs the versions of uv.lock; gpu-tabarena the versions TabArena
-# installs our dependencies at (tests/envs/tabarena.txt).
+# gpu-ours runs the versions of uv.lock, with torch 2.11+cu128; gpu-tabarena
+# the versions TabArena installs our dependencies at (tests/envs/tabarena.txt).
 [tool.tox]
 requires = ["tox>=4.21", "tox-uv>=1.11"]
 env_list = ["gpu-ours", "gpu-tabarena"]
@@ -68,6 +68,21 @@ commands = [
 [tool.tox.env.gpu-ours]
 runner = "uv-venv-lock-runner"
 dependency_groups = ["dev"]
+# uv.lock but torch, which is the build the CUDA golden references were made
+# with: CUDA 12.8 runs on older drivers than the lock's torch. The lock's torch
+# dependencies are left to it too, or each sync would swap them back.
+uv_sync_flags = [
+    "--inexact",
+    "--no-install-package", "torch",
+    "--no-install-package", "triton",
+    "--no-install-package", "cuda-bindings",
+    "--no-install-package", "cuda-toolkit",
+    "--no-install-package", "setuptools",
+]
+allowlist_externals = ["uv"]
+commands_pre = [
+    ["uv", "pip", "install", "--python", "{env_python}", "torch==2.11.0+cu128", "--index-url", "https://download.pytorch.org/whl/cu128"],
+]
 
 [tool.tox.env.gpu-tabarena]
 deps = ["-r tests/envs/tabarena.txt"]
