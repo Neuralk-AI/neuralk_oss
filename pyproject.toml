@@ -49,3 +49,25 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B"]
 # The formatter wraps code; docstring summaries stay on one line.
 ignore = ["E501"]
+
+# GPU test environments: `uvx --with tox-uv tox` on a machine with CUDA.
+# gpu-ours runs the versions of uv.lock; gpu-tabarena the versions TabArena
+# installs our dependencies at (tests/envs/tabarena.txt).
+[tool.tox]
+requires = ["tox>=4.21", "tox-uv>=1.11"]
+env_list = ["gpu-ours", "gpu-tabarena"]
+
+[tool.tox.env_run_base]
+base_python = ["python3.12"]
+commands = [
+    # Without CUDA the GPU cases would be skipped and the run would pass anyway.
+    ["python", "-c", "import torch; assert torch.cuda.is_available(), 'no CUDA GPU'; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name())"],
+    ["pytest", { replace = "posargs", extend = true }],
+]
+
+[tool.tox.env.gpu-ours]
+runner = "uv-venv-lock-runner"
+dependency_groups = ["dev"]
+
+[tool.tox.env.gpu-tabarena]
+deps = ["-r tests/envs/tabarena.txt"]

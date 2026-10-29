@@ -16,3 +16,4 @@ htmlcov/
 *.ckpt
 *.safetensors
 !tests/golden/**/*.safetensors
+.tox/
