@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """The fused RMSNorm of CUDA inference under autocast, from sdm's kernels.
 
 One kernel normalizes in fp32 and writes the autocast dtype, optionally after

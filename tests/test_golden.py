@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """Golden tests: outputs of the committed tiny checkpoints on fixed tables, against saved references.
 
 A change that moves any of them (the model, sdm's preprocessing, a torch

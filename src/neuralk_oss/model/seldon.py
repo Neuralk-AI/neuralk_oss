@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """Seldon: a tabular in-context-learning foundation model.
 
 The column and row stages interleave, one column block then one row block per

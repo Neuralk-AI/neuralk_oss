@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """The column stage: the cell and label embeddings, and the layers' column blocks."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """Neuralk-AI open-source models."""
 
 from importlib.metadata import version
