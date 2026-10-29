@@ -96,4 +96,6 @@ uv run ruff check . && uv run ruff format --check .
 `tests/test_golden.py` compares the outputs of tiny random-weight checkpoints
 (`tests/golden/`) to saved references. After an intended change of outputs,
 regenerate them with `UPDATE_GOLDEN=1 uv run pytest tests/test_golden.py` and
-commit the new `tests/golden/expected/`.
+commit the new `tests/golden/expected/`. With CUDA, the same cases also run on
+the GPU in float32 and float16 autocast; the classifier's CUDA references
+(`tests/golden/expected/cuda/`) are only regenerated on a CUDA machine.
