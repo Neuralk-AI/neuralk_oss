@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 
 from neuralk_oss import SeldonClassifier, SeldonRecipe
+from neuralk_oss.inference.classifier import MEMBER_BATCH_CELLS, member_batch_size
 
 
 def _frame(n, classes, seed=0):
@@ -34,6 +35,29 @@ def test_query_chunks_match(tiny_model):
         rtol=1e-5,
         atol=1e-6,
     )
+
+
+@pytest.mark.parametrize(("classes", "max_context_size"), [(3, 200_000), (13, 200_000), (3, 40)])
+def test_member_batches_match(tiny_model, classes, max_context_size):
+    X, y = _frame(80, classes)
+    kwargs = dict(n_estimators=4, device="cpu", max_context_size=max_context_size)
+    one = SeldonClassifier(tiny_model, estimator_batch_size=1, **kwargs)
+    for batch in (None, "auto", 3):
+        batched = SeldonClassifier(tiny_model, estimator_batch_size=batch, **kwargs)
+        np.testing.assert_allclose(
+            batched.fit(X[:60], y[:60]).predict_proba(X[60:]),
+            one.fit(X[:60], y[:60]).predict_proba(X[60:]),
+            rtol=1e-5,
+            atol=1e-6,
+        )
+
+
+def test_member_batch_size():
+    assert member_batch_size(500, 10, 4) == 4
+    assert member_batch_size(1_000, 200, 4) == 2
+    assert member_batch_size(4_000, 200, 4) == 1
+    assert member_batch_size(1, 1, 8) == 8
+    assert member_batch_size(MEMBER_BATCH_CELLS, 2, 8) == 1
 
 
 def test_subsampled_context(tiny_model):
