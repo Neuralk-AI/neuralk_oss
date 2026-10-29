@@ -1,4 +1,4 @@
-# neuralk_oss
+# Neuralk OSS
 
 Neuralk-AI open-source models.
 
