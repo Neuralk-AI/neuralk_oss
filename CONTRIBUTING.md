@@ -33,6 +33,16 @@ commit the new `tests/golden/expected/`. With CUDA, the same cases also run on
 the GPU in float16 autocast; the classifier's CUDA references
 (`tests/golden/expected/cuda/`) are only regenerated on a CUDA machine.
 
+On a machine with a CUDA GPU, [tox](https://tox.wiki) runs the whole suite in
+two environments, `gpu-ours` (the versions of `uv.lock`) and `gpu-tabarena`
+(the versions [TabArena](https://github.com/autogluon/tabarena) installs our
+dependencies at, `tests/envs/tabarena.txt`); both fail if torch sees no GPU:
+
+```bash
+uvx --with tox-uv tox                  # both
+uvx --with tox-uv tox -e gpu-tabarena  # one; pytest arguments after `--`
+```
+
 ## Versions
 
 Versions follow [semantic versioning](https://semver.org), `MAJOR.MINOR.PATCH`,
