@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """Seldon as a scikit-learn style classifier over pandas tables."""
 
 from __future__ import annotations

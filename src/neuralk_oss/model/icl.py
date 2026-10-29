@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """The ICL stage: every row attends to the labelled context rows, then the head."""
 
 from __future__ import annotations

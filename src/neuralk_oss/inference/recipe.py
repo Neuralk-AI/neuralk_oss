@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """Seldon's preprocessing: what sdm does to a table before the model reads it, and to the model's outputs.
 
 ``SeldonRecipe`` builds an ``sdm.Recipe`` from one method per step, each

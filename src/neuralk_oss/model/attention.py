@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """Seldon's attention: the multi-head attention, the pre-norm block, and the column stage's induced block.
 
 ``MultiheadAttention`` adds to PyTorch's a RoPE (row blocks), an RMSNorm on

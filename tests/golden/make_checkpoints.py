@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """Write the tiny checkpoints the golden tests load: ``uv run python -m tests.golden.make_checkpoints``.
 
 Random weights, seeded, so every layer is exercised; each checkpoint covers

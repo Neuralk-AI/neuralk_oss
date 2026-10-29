@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """The row stage: the readout tokens, the row blocks, and the projection of the readout to the ICL width."""
 
 from __future__ import annotations

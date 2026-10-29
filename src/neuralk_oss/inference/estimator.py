@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """Seldon as an sdm in-context model: sdm's preprocessing, ensembling, context cache and error-correcting output codes around ``Seldon``."""
 
 from __future__ import annotations

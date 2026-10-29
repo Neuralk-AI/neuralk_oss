@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """Inference: Seldon behind sdm's preprocessing and ensembling, as a classifier."""
 
 from neuralk_oss.inference.classifier import SeldonClassifier

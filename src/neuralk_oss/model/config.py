@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Neuralk-AI
+# SPDX-License-Identifier: MIT
+
 """Seldon's architecture, validated once from a checkpoint's ``config.json``.
 
 The file holds every value; these models hold none, so a missing key, an extra
