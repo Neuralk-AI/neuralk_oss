@@ -18,7 +18,7 @@ dependencies = [
     "pydantic>=2",
     "safetensors",
     # Pinned: the preprocessing and ensembling Seldon was evaluated with.
-    "structured-data-models @ git+https://github.com/NVIDIA/structured-data-models.git@98f61289c7a4e1bce3b33771223ac2e123b63f19",
+    "structured-data-models==0.2.1",
     "torch>=2.7",
 ]
 classifiers = [
@@ -35,9 +35,6 @@ dev = [
     "pytest>=8",
     "ruff>=0.6",
 ]
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/neuralk_oss"]
