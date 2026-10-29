@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -24,6 +24,15 @@ _NON_CUDNN_ATTENTION = [
     SDPBackend.EFFICIENT_ATTENTION,
     SDPBackend.MATH,
 ]
+# Context cells (rows x features) one batch of members holds at most by default:
+# below it a member alone leaves the GPU idle, so members run together; above
+# it they run one at a time, as fast, in a fraction of the memory.
+MEMBER_BATCH_CELLS = 400_000
+
+
+def member_batch_size(n_rows: int, n_features: int, n_estimators: int) -> int:
+    """Members run together on a context of ``n_rows`` x ``n_features``, within ``MEMBER_BATCH_CELLS``."""
+    return max(1, min(n_estimators, MEMBER_BATCH_CELLS // max(n_rows * n_features, 1)))
 
 
 class SeldonClassifier:
@@ -58,6 +67,11 @@ class SeldonClassifier:
         The preprocessing; ``SeldonRecipe()`` by default.
     query_chunk_size : int, default=8192
         Test rows run through the model together, per member.
+    estimator_batch_size : int, None or "auto", default="auto"
+        Members run through the model together; None runs them all at once,
+        "auto" as many as ``member_batch_size`` gives for the context. sdm
+        still separates members whose preprocessed tables differ in shape or
+        classes, and each member's outputs are the same up to rounding.
     """
 
     def __init__(
@@ -72,6 +86,7 @@ class SeldonClassifier:
         cudnn_attention: bool = False,
         recipe: SeldonRecipe | None = None,
         query_chunk_size: int = 8192,
+        estimator_batch_size: int | Literal["auto"] | None = "auto",
     ) -> None:
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -81,6 +96,7 @@ class SeldonClassifier:
         self.amp = amp
         self.cudnn_attention = cudnn_attention
         self.random_state = random_state
+        self.estimator_batch_size = estimator_batch_size
         self.estimator = SeldonICL(model, recipe, query_chunk_size).to(self.device)
 
     @classmethod
@@ -119,11 +135,16 @@ class SeldonClassifier:
             x_context = x_context[index].unflatten(0, shape)
             y_context = y_context[index].unflatten(0, shape)
             num_estimators = None
+        batch_size = self.estimator_batch_size
+        if batch_size == "auto":
+            n_rows, n_features = x_context.shape[-2:]
+            batch_size = member_batch_size(n_rows, n_features, self.n_estimators)
         with self._inference():
             self.estimator.fit(
                 x=x_context.to(self.device),
                 y=y_context.to(self.device),
                 num_estimators=num_estimators,
+                estimator_batch_size=batch_size,
                 generator=torch.Generator(self.device).manual_seed(self.random_state),
             )
         return self
