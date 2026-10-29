@@ -1,0 +1,32 @@
+{
+  "model_version": "0.2",
+  "embed_dim": 16,
+  "use_rmsnorm": true,
+  "head": {
+    "task": "classification",
+    "max_classes": 10
+  },
+  "col": {
+    "num_blocks": 2,
+    "nhead": 2,
+    "bias_free_ln": true
+  },
+  "row": {
+    "num_blocks": 2,
+    "nhead": 2,
+    "num_cls": 2,
+    "bias_free_ln": true
+  },
+  "icl": {
+    "num_blocks": 2,
+    "nhead": 4,
+    "bias_free_ln": true
+  },
+  "num_inducing_points": 8,
+  "num_frequencies": 4,
+  "icl_channels": 24,
+  "num_icl_key_value_heads_for_query": null,
+  "bias_free_linear": true,
+  "fp32_cells": true,
+  "fp32_head": true
+}

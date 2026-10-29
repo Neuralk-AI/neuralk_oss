@@ -92,3 +92,8 @@ uv sync
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 ```
+
+`tests/test_golden.py` compares the outputs of tiny random-weight checkpoints
+(`tests/golden/`) to saved references. After an intended change of outputs,
+regenerate them with `UPDATE_GOLDEN=1 uv run pytest tests/test_golden.py` and
+commit the new `tests/golden/expected/`.
