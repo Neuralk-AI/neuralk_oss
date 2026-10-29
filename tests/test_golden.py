@@ -4,13 +4,12 @@ A change that moves any of them (the model, sdm's preprocessing, a torch
 upgrade) fails here. If the change is intended, regenerate the references
 with ``UPDATE_GOLDEN=1 uv run pytest tests/test_golden.py`` and review them.
 
-The references are float32 outputs. With CUDA, the same cases also run on
-it in float32 and under float16 autocast (the default inference path, with the
-fused kernels), each with its own tolerance. The model's CUDA outputs are
-checked against the CPU references; the classifier's have their own, in
-``expected/cuda``: its seeded generator is on the model's device, and CUDA's
-random streams differ from CPU's, so each member is preprocessed differently.
-Regenerating them needs a CUDA machine.
+With CUDA, the same cases also run on it under float16 autocast, the
+default inference path through the fused kernels, with a looser tolerance.
+The model's CUDA outputs are checked against the CPU references; the
+classifier's have their own, in ``expected/cuda``: its seeded generator is on
+the model's device, and CUDA's random streams differ from CPU's, so each
+member is preprocessed differently. Regenerating them needs a CUDA machine.
 """
 
 import functools
@@ -27,20 +26,22 @@ from neuralk_oss import Seldon, SeldonClassifier
 GOLDEN = Path(__file__).parent / "golden"
 UPDATE = os.environ.get("UPDATE_GOLDEN") == "1"
 
-_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
-MODES = [
-    pytest.param("cpu", False, id="cpu"),
-    pytest.param("cuda", False, id="cuda-fp32", marks=_cuda),
-    pytest.param("cuda", True, id="cuda-amp", marks=_cuda),
+# CPU in float32; CUDA in float16 autocast, as the classifier runs by default.
+DEVICES = [
+    "cpu",
+    pytest.param(
+        "cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+    ),
 ]
 
 
-def tolerance(test: str, amp: bool) -> dict[str, float]:
-    """``assert_allclose``'s tolerances against the float32 references."""
-    if not amp:
+def tolerance(test: str, device: str) -> dict[str, float]:
+    """``assert_allclose``'s tolerances against the references."""
+    if device == "cpu":
         # Loose enough for BLAS and torch versions, tight enough for any real change.
         return {"rtol": 1e-4, "atol": 1e-5}
-    # About 4x the float16 drift on an H100: 2.3e-4 on probabilities, 2.6e-3 on logits.
+    # About 4x the float16 drift from float32 on an H100: 2.3e-4 on probabilities,
+    # 2.6e-3 on logits, which leaves room for other GPUs.
     return {"rtol": 0.0, "atol": {"classifier": 1e-3, "model": 1e-2}[test]}
 
 
@@ -142,30 +143,30 @@ CLASSIFIER_CASES = [
 ]
 
 
-@pytest.mark.parametrize(("device", "amp"), MODES)
+@pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("case", CLASSIFIER_CASES, ids=lambda case: case.__name__)
-def test_classifier_golden(case, device, amp):
+def test_classifier_golden(case, device):
     X, y, kwargs = case(np.random.default_rng(0))
     model = checkpoint(kwargs.pop("checkpoint", "seldon-tiny-classifier"), device)
-    clf = SeldonClassifier(model, n_estimators=3, device=device, amp=amp, **kwargs)
+    clf = SeldonClassifier(model, n_estimators=3, device=device, **kwargs)
     n_train = 60 if len(X) <= 80 else 100
     proba = clf.fit(X[:n_train], y[:n_train]).predict_proba(X[n_train:])
     expected = GOLDEN / "expected" / ("cuda" if device == "cuda" else "")
     check(
         expected / f"classifier-{case.__name__}.npy",
         proba,
-        tolerance("classifier", amp),
-        reference=not amp,
+        tolerance("classifier", device),
+        reference=True,
     )
 
 
-@pytest.mark.parametrize(("device", "amp"), MODES)
+@pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize(
     "name",
     ["seldon-tiny-classifier", "seldon-tiny-classifier-variant", "seldon-tiny-regressor"],
 )
 @torch.inference_mode()
-def test_model_golden(name, device, amp):
+def test_model_golden(name, device):
     model = checkpoint(name, device)
     g = torch.Generator().manual_seed(0)
     X = torch.randn(2, 40, 5, generator=g)
@@ -175,11 +176,11 @@ def test_model_golden(name, device, amp):
         y = torch.randn(2, 30, generator=g)
     else:
         y = torch.randint(0, 3, (2, 30), generator=g)
-    with torch.autocast(device, dtype=torch.float16, enabled=amp):
+    with torch.autocast(device, dtype=torch.float16, enabled=device == "cuda"):
         out = model(X.to(device), y.to(device), 30, categorical_mask=mask)
     check(
         GOLDEN / "expected" / f"model-{name}.npy",
         out.float().cpu().numpy(),
-        tolerance("model", amp),
+        tolerance("model", device),
         reference=device == "cpu",
     )
