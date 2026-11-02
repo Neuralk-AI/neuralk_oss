@@ -61,7 +61,7 @@ takes its parameters as keyword arguments:
 from neuralk_oss import SeldonClassifier, SeldonRecipe
 
 recipe = SeldonRecipe(transforms=("identity", "rank_gaussian"), softmax_temperature=0.9)
-clf = SeldonClassifier.from_pretrained("seldon-small-classifier", recipe=recipe)
+clf = SeldonClassifier.from_pretrained("seldon-mini", recipe=recipe)
 ```
 
 | parameter | default | |
@@ -91,6 +91,28 @@ class MyRecipe(SeldonRecipe):
 
 
 clf = SeldonClassifier.from_pretrained("seldon-mini", recipe=MyRecipe())
+```
+
+### Configs
+
+A YAML config sets a classifier and its recipe in one file: `checkpoint`,
+any keyword argument of `from_pretrained`, and `recipe`, `SeldonRecipe`'s
+keyword arguments. `seldon-mini` is packaged, the setup neuralk_model
+evaluates as `seldon_mini`, and the defaults:
+
+```yaml
+checkpoint: seldon-mini
+n_estimators: 8
+max_context_size: 200000
+random_state: 0
+amp: true
+recipe:
+  shuffle_categories: true
+```
+
+```python
+clf = SeldonClassifier.from_config("seldon-mini")
+clf = SeldonClassifier.from_config("my_run.yaml", device="cpu")  # keyword arguments override the file
 ```
 
 ### The model alone

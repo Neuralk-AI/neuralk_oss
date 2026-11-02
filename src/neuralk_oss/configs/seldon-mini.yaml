@@ -1,0 +1,9 @@
+# neuralk_model's seldon_mini evaluation setup: 8 members, members 4-7 reading
+# categorical codes in a random order per column, the others sorted.
+checkpoint: seldon-mini
+n_estimators: 8
+max_context_size: 200000
+random_state: 0
+amp: true
+recipe:  # SeldonRecipe's keyword arguments
+  shuffle_categories: true

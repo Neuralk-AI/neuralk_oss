@@ -16,6 +16,7 @@ dependencies = [
     "numpy",
     "pandas>=2.2,<3",
     "pydantic>=2",
+    "pyyaml",
     "safetensors",
     # Pinned: the preprocessing and ensembling Seldon was evaluated with.
     "structured-data-models==0.2.1",

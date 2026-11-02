@@ -1,6 +1,8 @@
 # Copyright (c) 2026 Neuralk-AI
 # SPDX-License-Identifier: Apache-2.0
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -159,3 +161,30 @@ def test_from_pretrained_model_names(tiny_model, tmp_path, monkeypatch):
         "org/repo",
         "seldon",
     ]
+
+
+TINY = Path(__file__).parent / "golden" / "seldon-tiny-classifier"
+
+
+def test_packaged_config_is_the_default_recipe():
+    # The packaged checkpoint is downloaded: the tiny one stands in for it.
+    clf = SeldonClassifier.from_config("seldon-mini", checkpoint=TINY, device="cpu")
+    assert (clf.n_estimators, clf.max_context_size, clf.random_state) == (8, 200_000, 0)
+    assert repr(clf.estimator.recipe.build()) == repr(SeldonRecipe().build())
+    X, y = _frame(80, 3)
+    assert clf.fit(X[:60], y[:60]).predict_proba(X[60:]).shape == (20, 3)
+
+
+def test_config_file(tmp_path):
+    path = tmp_path / "run.yaml"
+    path.write_text(
+        f"checkpoint: {TINY}\nn_estimators: 3\nrecipe:\n  transforms: [identity, robust]\n"
+    )
+    clf = SeldonClassifier.from_config(path, device="cpu")
+    assert clf.n_estimators == 3
+    assert clf.estimator.recipe.transforms == ["identity", "robust"]
+    path.write_text(f"checkpoint: {TINY}\nrecipe:\n  max_feature: 3\n")
+    with pytest.raises(TypeError, match="max_feature"):
+        SeldonClassifier.from_config(path)
+    with pytest.raises(ValueError, match="seldon-mini"):
+        SeldonClassifier.from_config("seldon-maxi")

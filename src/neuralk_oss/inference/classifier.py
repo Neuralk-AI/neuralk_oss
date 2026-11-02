@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
+from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal
 
@@ -15,6 +16,7 @@ import numpy as np
 import pandas as pd
 import sdm
 import torch
+import yaml
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from neuralk_oss.inference.estimator import SeldonICL
@@ -123,6 +125,29 @@ class SeldonClassifier:
             name_or_path, subfolder=subfolder, revision=revision, token=token
         )
         return cls(model, **kwargs)
+
+    @classmethod
+    def from_config(cls, config: str | os.PathLike, **kwargs: Any) -> SeldonClassifier:
+        """The classifier of a YAML config: a packaged one by name, such as ``"seldon-mini"``, or a file.
+
+        The config maps ``checkpoint`` to ``from_pretrained``'s first argument,
+        ``recipe`` to ``SeldonRecipe``'s keyword arguments, and any other key to
+        a keyword argument of ``from_pretrained``; ``kwargs`` override its keys.
+        """
+        path = Path(config)
+        if path.suffix not in (".yaml", ".yml") and path.parent == Path():
+            packaged = files("neuralk_oss") / "configs"
+            names = sorted(p.name.removesuffix(".yaml") for p in packaged.iterdir())
+            if str(config) not in names:
+                raise ValueError(f"unknown config {config!r}; packaged: {names}, or a .yaml path")
+            path = packaged / f"{config}.yaml"
+        params = {**(yaml.safe_load(path.read_text()) or {}), **kwargs}
+        if "checkpoint" not in params:
+            raise ValueError(f"config {config!r} names no checkpoint")
+        recipe = params.pop("recipe", None) or {}
+        if isinstance(recipe, dict):
+            recipe = SeldonRecipe(**recipe)
+        return cls.from_pretrained(params.pop("checkpoint"), recipe=recipe, **params)
 
     def fit(self, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> SeldonClassifier:
         """Keep ``X`` and ``y`` as the context of every member."""
