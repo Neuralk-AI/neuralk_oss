@@ -4,8 +4,12 @@
 """Seldon's preprocessing: what sdm does to a table before the model reads it, and to the model's outputs.
 
 ``SeldonRecipe`` builds an ``sdm.Recipe`` from one method per step, each
-returning fresh processors. To change a step, subclass it and override that
-method (or set a class attribute), then hand an instance to the estimator::
+returning fresh processors. Its parameters are keyword arguments::
+
+    SeldonClassifier.from_pretrained(path, recipe=SeldonRecipe(transforms=("identity", "robust")))
+
+To change a step beyond them, subclass it and override that method (or set a
+class attribute), then hand an instance to the estimator::
 
     class NoPowerTransform(SeldonRecipe):
         def numerical_transforms(self):
@@ -18,12 +22,20 @@ The default is sdm's recipe for this architecture, step for step.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any, Literal
+
 import sdm.processing as sp
 import torch
 
 
 class SeldonRecipe:
     """The steps of Seldon's preprocessing, each an overridable method.
+
+    Parameters
+    ----------
+    **params
+        Any of the attributes below, overriding its default.
 
     Attributes
     ----------
@@ -40,6 +52,23 @@ class SeldonRecipe:
     category_count_min_cardinality : int
         A categorical column with at least this many categories gains a column
         of each category's count.
+    transforms : tuple of str
+        The numerical transforms the ensemble members take in turn, one each:
+        ``"identity"``, ``"power"`` (Yeo-Johnson), ``"robust"`` (median and
+        quartile scaling, soft-clipped to +-3) and ``"rank_gaussian"``; their
+        number is the number of distinct views.
+    flip_sign : bool
+        Whether each member negates a random half of its numerical columns.
+    feature_shuffle : {"latin", "random"} or None
+        How each member permutes its columns: coupled Latin permutations,
+        independent ones, or none.
+    class_shift : bool
+        Whether each member shifts the class codes cyclically, by its own offset.
+    average_logits : bool
+        Whether the members' logits are averaged before the softmax; otherwise
+        their probabilities are averaged after it.
+    softmax_temperature : float
+        Divisor of the logits before the softmax.
     """
 
     max_features = 500
@@ -48,6 +77,24 @@ class SeldonRecipe:
     rank_gaussian_knots = 8192
     clip_sigma = 4.0
     category_count_min_cardinality = 50
+    transforms: tuple[str, ...] = ("identity", "power", "robust", "rank_gaussian")
+    flip_sign = True
+    feature_shuffle: Literal["latin", "random"] | None = "latin"
+    class_shift = True
+    average_logits = True
+    softmax_temperature = 1.0
+
+    def __init__(self, **params: Any) -> None:
+        for name, value in params.items():
+            cls = type(self)
+            if name.startswith("_") or not hasattr(cls, name) or callable(getattr(cls, name)):
+                raise TypeError(f"SeldonRecipe has no parameter {name!r}")
+            setattr(self, name, value)
+        unknown = set(self.transforms) - set(_TRANSFORMS)
+        if not self.transforms or unknown:
+            raise ValueError(
+                f"transforms must be a non-empty tuple of {sorted(_TRANSFORMS)}, got {self.transforms!r}"
+            )
 
     def build(self) -> sp.Recipe:
         """The ``sdm.Recipe`` of these steps."""
@@ -55,19 +102,20 @@ class SeldonRecipe:
 
     def features(self) -> list[sp.Processor]:
         """The steps of the feature columns: per type, then shuffled, cut to ``max_features`` and cast."""
+        shuffle = [sp.ShuffleColumns(method=self.feature_shuffle)] if self.feature_shuffle else []
         return [
             sp.StypeDispatch(
                 numerical=self.numerical_features(),
                 categorical=self.categorical_features(),
             ),
-            sp.ShuffleColumns(method="latin"),
+            *shuffle,
             sp.SelectColumns(self.max_features, method="first"),
             sp.Cast(torch.float32),
         ]
 
     def numerical_features(self) -> list[sp.Processor]:
         """The steps of a numerical column."""
-        return [self.numerical_processor(), sp.FlipSign()]
+        return [self.numerical_processor(), *([sp.FlipSign()] if self.flip_sign else [])]
 
     def categorical_features(self) -> list[sp.Processor]:
         """The steps of a categorical column: its codes, with their counts for a large vocabulary, read as numbers."""
@@ -92,13 +140,8 @@ class SeldonRecipe:
         )
 
     def numerical_transforms(self) -> list[sp.Processor | list[sp.Processor]]:
-        """The transforms the ensemble members take in turn, one each."""
-        return [
-            sp.Identity(),
-            sp.PowerTransform(),
-            [sp.RobustScale(), sp.ClipSoft(3.0)],
-            sp.RankGaussian(max_knots=self.rank_gaussian_knots),
-        ]
+        """The transforms the ensemble members take in turn, one each: those named in ``transforms``."""
+        return [_TRANSFORMS[name](self) for name in self.transforms]
 
     def target(self) -> list[sp.Processor]:
         """The steps of the target: class codes shifted per member, or a standardized number."""
@@ -106,15 +149,24 @@ class SeldonRecipe:
             sp.StypeDispatch(
                 categorical=[
                     sp.AlignCategories(sort_by="value"),
-                    sp.ShuffleCategories(method="shift"),
+                    *([sp.ShuffleCategories(method="shift")] if self.class_shift else []),
                 ],
                 numerical=[sp.Standardize(), sp.FlipSign()],
             ),
         ]
 
     def output(self) -> sp.TaskDispatch:
-        """The steps of the members' outputs: class logits averaged then softmaxed; sorted quantiles with a trimmed mean."""
+        """The steps of the members' outputs: class logits averaged then softmaxed (or the reverse); sorted quantiles with a trimmed mean."""
+        classification = [sp.AverageEstimators(), sp.Softmax(temperature=self.softmax_temperature)]
         return sp.TaskDispatch(
-            classification=[sp.AverageEstimators(), sp.Softmax()],
+            classification=classification if self.average_logits else classification[::-1],
             regression=[sp.SortQuantiles(), sp.AverageEstimators(trim_fraction=0.2)],
         )
+
+
+_TRANSFORMS: dict[str, Callable[[SeldonRecipe], sp.Processor | list[sp.Processor]]] = {
+    "identity": lambda recipe: sp.Identity(),
+    "power": lambda recipe: sp.PowerTransform(),
+    "robust": lambda recipe: [sp.RobustScale(), sp.ClipSoft(3.0)],
+    "rank_gaussian": lambda recipe: sp.RankGaussian(max_knots=recipe.rank_gaussian_knots),
+}

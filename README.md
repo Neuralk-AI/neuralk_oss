@@ -54,8 +54,28 @@ averaged. Inference runs in float16 autocast on CUDA by default
 ### Preprocessing
 
 The preprocessing and ensembling come from structured-data-models (`sdm`,
-Apache-2.0), pinned in `pyproject.toml`. `SeldonRecipe` builds its
-recipe one overridable method per step:
+Apache-2.0), pinned in `pyproject.toml`. `SeldonRecipe` builds its recipe, and
+takes its parameters as keyword arguments:
+
+```python
+from neuralk_oss import SeldonClassifier, SeldonRecipe
+
+recipe = SeldonRecipe(transforms=("identity", "rank_gaussian"), softmax_temperature=0.9)
+clf = SeldonClassifier.from_pretrained("seldon-small-classifier", recipe=recipe)
+```
+
+| parameter | default | |
+| --- | --- | --- |
+| `transforms` | `("identity", "power", "robust", "rank_gaussian")` | numerical transforms the members take in turn, one each |
+| `flip_sign` | `True` | each member negates a random half of its numerical columns |
+| `feature_shuffle` | `"latin"` | column permutation per member: `"latin"`, `"random"` or `None` |
+| `class_shift` | `True` | each member shifts the class codes by its own offset |
+| `average_logits` | `True` | average the members' logits, else their probabilities |
+| `softmax_temperature` | `1.0` | divisor of the logits before the softmax |
+| `max_features` | `500` | columns the model reads, cut after the shuffle |
+
+The rest (clipping bounds, rank-Gaussian knots, category counts) is in
+`SeldonRecipe`'s docstring. Beyond parameters, each step is an overridable method:
 
 ```python
 import sdm.processing as sp

@@ -80,6 +80,40 @@ def test_recipe_override(tiny_model):
     assert not np.allclose(p, default.fit(X[:60], y[:60]).predict_proba(X[60:]))
 
 
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"max_features": 2},
+        {"transforms": ("identity", "rank_gaussian")},
+        {"flip_sign": False},
+        {"feature_shuffle": "random"},
+        {"feature_shuffle": None},
+        {"class_shift": False},
+        {"average_logits": False},
+        {"softmax_temperature": 2.0},
+    ],
+    ids=lambda params: "-".join(f"{k}={v}" for k, v in params.items()),
+)
+def test_recipe_parameters(tiny_model, params):
+    X, y = _frame(80, 3)
+    clf = SeldonClassifier(tiny_model, n_estimators=4, device="cpu", recipe=SeldonRecipe(**params))
+    default = SeldonClassifier(tiny_model, n_estimators=4, device="cpu")
+    p = clf.fit(X[:60], y[:60]).predict_proba(X[60:])
+    np.testing.assert_allclose(p.sum(axis=1), 1, rtol=1e-5)
+    assert not np.allclose(p, default.fit(X[:60], y[:60]).predict_proba(X[60:]))
+
+
+def test_recipe_rejects_unknown_parameters():
+    with pytest.raises(TypeError, match="max_feature"):
+        SeldonRecipe(max_feature=2)
+    with pytest.raises(TypeError, match="build"):
+        SeldonRecipe(build=None)
+    with pytest.raises(ValueError, match="transforms"):
+        SeldonRecipe(transforms=("identity", "quantile"))
+    with pytest.raises(ValueError, match="transforms"):
+        SeldonRecipe(transforms=())
+
+
 def test_numpy_input(tiny_model):
     X, y = _frame(50, 2)
     clf = SeldonClassifier(tiny_model, n_estimators=2, device="cpu")

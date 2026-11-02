@@ -24,7 +24,7 @@ import pandas as pd
 import pytest
 import torch
 
-from neuralk_oss import Seldon, SeldonClassifier
+from neuralk_oss import Seldon, SeldonClassifier, SeldonRecipe
 
 GOLDEN = Path(__file__).parent / "golden"
 UPDATE = os.environ.get("UPDATE_GOLDEN") == "1"
@@ -132,6 +132,28 @@ def variant_checkpoint(rng):
     return X, y, {"checkpoint": "seldon-tiny-classifier-variant"}
 
 
+def recipe_two_transforms(rng):
+    X, y, _ = multiclass_mixed(rng)
+    recipe = SeldonRecipe(
+        transforms=("identity", "rank_gaussian"), feature_shuffle="random", softmax_temperature=0.8
+    )
+    return X, y, {"recipe": recipe}
+
+
+def recipe_single_view(rng):
+    # One transform, no sign flip, column shuffle or class shift: the members
+    # are identical, and their probabilities are averaged.
+    X, y, _ = multiclass_mixed(rng)
+    recipe = SeldonRecipe(
+        transforms=("robust",),
+        flip_sign=False,
+        feature_shuffle=None,
+        class_shift=False,
+        average_logits=False,
+    )
+    return X, y, {"recipe": recipe}
+
+
 CLASSIFIER_CASES = [
     binary_numerical,
     multiclass_mixed,
@@ -143,6 +165,8 @@ CLASSIFIER_CASES = [
     numpy_input,
     single_query_row,
     variant_checkpoint,
+    recipe_two_transforms,
+    recipe_single_view,
 ]
 
 
