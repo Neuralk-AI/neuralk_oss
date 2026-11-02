@@ -41,7 +41,7 @@ from neuralk_oss.model.row import RowInteraction
 CONFIG_NAME = "config.json"
 WEIGHTS_NAME = "model.safetensors"
 # The Hugging Face repository of the released checkpoints, one directory each.
-HUB_REPO = "Neuralk-AI/seldon"
+HUB_REPO = "Neuralk-AI/seldon-small"
 
 
 class Context(TypedDict):

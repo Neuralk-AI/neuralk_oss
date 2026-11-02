@@ -28,7 +28,7 @@ A checkpoint is a directory holding `config.json` and `model.safetensors`.
 `from_pretrained` takes:
 
 - a checkpoint name, such as `"seldon-small-classifier"`: downloaded from the
-  Hugging Face repository [`Neuralk-AI/seldon`](https://huggingface.co/Neuralk-AI/seldon),
+  Hugging Face repository [`Neuralk-AI/seldon-small`](https://huggingface.co/Neuralk-AI/seldon-small),
   where each checkpoint is a directory, on the first call, then read from the
   Hugging Face cache (`~/.cache/huggingface`, or `HF_HOME`);
 - a local directory, read in place: `from_pretrained("path/to/seldon-small-classifier")`;
