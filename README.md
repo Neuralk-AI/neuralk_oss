@@ -22,21 +22,23 @@ proba = clf.predict_proba(X_test)  # (n_rows, n_classes), columns in clf.classes
 
 | name | task | parameters |
 | --- | --- | --- |
+| `seldon-classifier` | classification, up to 10 classes per model call | 213.5M |
 | `seldon-small-classifier` | classification, up to 10 classes per model call | 27.4M |
 
 A checkpoint is a directory holding `config.json` and `model.safetensors`.
 `from_pretrained` takes:
 
-- a checkpoint name, such as `"seldon-small-classifier"`: downloaded from the
-  Hugging Face repository [`Neuralk-AI/seldon-small`](https://huggingface.co/Neuralk-AI/seldon-small),
-  where each checkpoint is a directory, on the first call, then read from the
-  Hugging Face cache (`~/.cache/huggingface`, or `HF_HOME`);
+- a checkpoint name of the table above: downloaded from its Hugging Face
+  repository, [`Neuralk-AI/seldon`](https://huggingface.co/Neuralk-AI/seldon) or
+  [`Neuralk-AI/seldon-small`](https://huggingface.co/Neuralk-AI/seldon-small),
+  where the checkpoint is a directory of that name, on the first call, then
+  read from the Hugging Face cache (`~/.cache/huggingface`, or `HF_HOME`);
 - a local directory, read in place: `from_pretrained("path/to/seldon-small-classifier")`;
 - any Hugging Face repository, with the checkpoint's directory and a revision:
   `from_pretrained("org/repo", subfolder="seldon-small-classifier", revision="v1")`.
 
-The repository is private for now: log in once with an account that can read
-it (`hf auth login`), or pass `token=...` to `from_pretrained`.
+The repositories are private for now: log in once with an account that can read
+them (`hf auth login`), or pass `token=...` to `from_pretrained`.
 
 Column types are inferred (categorical columns are embedded as such, NaNs are
 kept for the model's own imputation), each of the `n_estimators` ensemble
