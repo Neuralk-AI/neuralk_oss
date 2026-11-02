@@ -3,8 +3,9 @@
 # Keyword arguments of from_config override the file's keys.
 
 # --- The checkpoint (SeldonClassifier.from_pretrained) ---
-# A checkpoint name, a local directory or a Hugging Face repository.
-checkpoint: seldon-small-classifier
+# A model name (seldon, seldon-mini), a checkpoint name, a local directory or a
+# Hugging Face repository.
+checkpoint: seldon-mini
 subfolder: null          # the checkpoint's directory, for a repository of your own
 revision: null           # a branch, tag or commit of the repository
 token: null              # prefer `hf auth login`: never commit a token
