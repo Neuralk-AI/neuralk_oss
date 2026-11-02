@@ -268,3 +268,21 @@ def test_recipe_groups_on_a_subsampled_context(tiny_model):
         tiny_model, n_estimators=3, device="cpu", max_context_size=25, recipe=recipes
     )
     assert clf.fit(X[:60], y[:60]).predict_proba(X[60:]).shape == (20, 3)
+
+
+def test_model_names_take_their_packaged_config(tiny_model, monkeypatch):
+    from neuralk_oss.model import Seldon
+
+    monkeypatch.setattr(Seldon, "from_pretrained", lambda name, **_: tiny_model)
+    for name, size in [("seldon", 8), ("seldon-mini", 4)]:
+        clf = SeldonClassifier.from_pretrained(name, device="cpu")
+        assert clf.n_estimators == size
+        assert [e.recipe.shuffle_categories for e in clf.estimators] == [False, True]
+    # Arguments override the config; changing the members needs matching recipes.
+    clf = SeldonClassifier.from_pretrained("seldon", recipe=SeldonRecipe(), n_estimators=2)
+    assert clf.n_estimators == 2 and len(clf.estimators) == 1
+    with pytest.raises(ValueError, match="needs recipes whose members match it"):
+        SeldonClassifier.from_pretrained("seldon", n_estimators=16)
+    # Any other checkpoint takes the constructor's defaults.
+    clf = SeldonClassifier.from_pretrained(TINY, device="cpu")
+    assert clf.n_estimators == 8 and len(clf.estimators) == 1

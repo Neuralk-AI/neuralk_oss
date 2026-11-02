@@ -9,6 +9,7 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from importlib.resources import files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -25,6 +26,7 @@ from neuralk_oss.model import Seldon
 from neuralk_oss.model.seldon import HUB_CHECKPOINTS
 
 _TARGET = "target"
+_CONFIGS = files("neuralk_oss") / "configs"
 # Every attention kernel PyTorch has but cuDNN's (see ``cudnn_attention``).
 _NON_CUDNN_ATTENTION = [
     SDPBackend.FLASH_ATTENTION,
@@ -124,10 +126,18 @@ class SeldonClassifier:
         token: str | None = None,
         **kwargs: Any,
     ) -> SeldonClassifier:
-        """The classifier of a saved model: a released model's name, ``"seldon"`` or ``"seldon-mini"``, or what ``Seldon.from_pretrained`` takes (a local directory, a checkpoint name such as ``"seldon-mini-classifier"``, a Hub repository); ``kwargs`` are the constructor's."""
+        """The classifier of a saved model: a released model's name, ``"seldon"`` or ``"seldon-mini"``, or what ``Seldon.from_pretrained`` takes (a local directory, a checkpoint name such as ``"seldon-mini-classifier"``, a Hub repository); ``kwargs`` are the constructor's.
+
+        A released model's name also takes the settings of its packaged config
+        (``configs/<name>.yaml``: members, recipe, ...), which ``kwargs``
+        override; anything else takes the constructor's defaults.
+        """
         # A model name is its classification checkpoint; a local directory of that name wins.
         checkpoint = f"{name_or_path}-classifier"
         if subfolder is None and checkpoint in HUB_CHECKPOINTS and not Path(name_or_path).is_dir():
+            settings = _read_config(_CONFIGS / f"{name_or_path}.yaml")
+            settings.pop("checkpoint", None)
+            kwargs = {**settings, **kwargs}
             name_or_path = checkpoint
         model = Seldon.from_pretrained(
             name_or_path, subfolder=subfolder, revision=revision, token=token
@@ -144,20 +154,14 @@ class SeldonClassifier:
         """
         path = Path(config)
         if path.suffix not in (".yaml", ".yml") and path.parent == Path():
-            packaged = files("neuralk_oss") / "configs"
-            names = sorted(p.name.removesuffix(".yaml") for p in packaged.iterdir())
+            names = sorted(p.name.removesuffix(".yaml") for p in _CONFIGS.iterdir())
             if str(config) not in names:
                 raise ValueError(f"unknown config {config!r}; packaged: {names}, or a .yaml path")
-            path = packaged / f"{config}.yaml"
-        params = {**(yaml.safe_load(path.read_text()) or {}), **kwargs}
+            path = _CONFIGS / f"{config}.yaml"
+        params = {**_read_config(path), **kwargs}
         if "checkpoint" not in params:
             raise ValueError(f"config {config!r} names no checkpoint")
-        recipe = params.pop("recipe", None) or {}
-        if isinstance(recipe, dict):
-            recipe = SeldonRecipe(**recipe)
-        elif isinstance(recipe, list):
-            recipe = [r if isinstance(r, SeldonRecipe) else SeldonRecipe(**r) for r in recipe]
-        return cls.from_pretrained(params.pop("checkpoint"), recipe=recipe, **params)
+        return cls.from_pretrained(params.pop("checkpoint"), **params)
 
     def fit(self, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> SeldonClassifier:
         """Keep ``X`` and ``y`` as the context of every member."""
@@ -230,6 +234,17 @@ class SeldonClassifier:
             yield
 
 
+def _read_config(path: Path | Traversable) -> dict[str, Any]:
+    """A YAML config's keys, its ``recipe`` built as ``SeldonRecipe``s."""
+    params = yaml.safe_load(path.read_text()) or {}
+    recipe = params.get("recipe")
+    if isinstance(recipe, dict):
+        params["recipe"] = SeldonRecipe(**recipe)
+    elif isinstance(recipe, list):
+        params["recipe"] = [SeldonRecipe(**r) for r in recipe]
+    return params
+
+
 def _group_sizes(recipes: list[SeldonRecipe], n_estimators: int) -> list[int]:
     """Each recipe's number of members, checking that their ``members`` cover the ensemble once."""
     if any(r.members == "all" for r in recipes):
@@ -243,7 +258,8 @@ def _group_sizes(recipes: list[SeldonRecipe], n_estimators: int) -> list[int]:
         outside = sorted(set(members) - set(range(n_estimators)))
         raise ValueError(
             f"the recipes' members must cover members 0 to {n_estimators - 1} once each: "
-            f"missing {missing}, repeated {repeated}, out of range {outside}"
+            f"missing {missing}, repeated {repeated}, out of range {outside}; "
+            "a different n_estimators needs recipes whose members match it"
         )
     return [len(r.members) for r in recipes]
 

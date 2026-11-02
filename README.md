@@ -18,6 +18,11 @@ clf.fit(X_train, y_train)  # pandas DataFrame (or array) and labels
 proba = clf.predict_proba(X_test)  # (n_rows, n_classes), columns in clf.classes_ order
 ```
 
+A model's name loads it with the settings it is meant to run with, from its
+packaged config (see [Configs](#configs)): `seldon` with 8 ensemble members,
+`seldon-mini` with 4, half of them reading categories in a shuffled order.
+Keyword arguments override them, e.g. `from_pretrained("seldon", device="cpu")`.
+
 ### Checkpoints
 
 | model | checkpoint | task | parameters |
@@ -109,11 +114,12 @@ clf = SeldonClassifier.from_pretrained("seldon-mini", n_estimators=8, recipe=rec
 
 ### Configs
 
-A YAML config sets a classifier and its recipe in one file: `checkpoint`,
-any keyword argument of `from_pretrained`, and `recipe`, `SeldonRecipe`'s
-keyword arguments, or a list of them, one per group of members. Two configs
-are packaged, each with half the members shuffling categories: `seldon`, 8
-members of Seldon, and `seldon-mini`, 4 members of Seldon-Mini:
+For full control over a run, beyond `from_pretrained`'s defaults, a YAML
+config sets the checkpoint, the classifier and its recipe in one file:
+`checkpoint`, any keyword argument of `from_pretrained`, and `recipe`,
+`SeldonRecipe`'s keyword arguments, or a list of them, one per group of
+members. Each released model's settings are a packaged config of its name,
+which `from_pretrained` loads: `seldon` and `seldon-mini`.
 
 ```yaml
 # seldon.yaml
@@ -130,8 +136,7 @@ recipe:
 ```
 
 ```python
-clf = SeldonClassifier.from_config("seldon")
-clf = SeldonClassifier.from_config("seldon-mini")
+clf = SeldonClassifier.from_config("seldon")  # the same as from_pretrained("seldon")
 clf = SeldonClassifier.from_config(
     "my_run.yaml", device="cpu"
 )  # keyword arguments override the file
@@ -139,7 +144,10 @@ clf = SeldonClassifier.from_config(
 
 [`template.yaml`](src/neuralk_oss/configs/template.yaml), packaged next to
 them, lists every argument a config can set, at its default, with what
-it does: copy it and keep the keys you change.
+it does: copy it and keep the keys you change. Keys a config leaves out take
+the model's own settings for `seldon` and `seldon-mini`, the constructor's
+defaults otherwise. To change `n_estimators` of a model whose config splits
+its members into groups, set `recipe` too, so that its members match.
 
 ### The model alone
 
