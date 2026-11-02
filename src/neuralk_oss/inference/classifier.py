@@ -169,7 +169,9 @@ class SeldonClassifier:
             df=pd.DataFrame({_TARGET: codes}), stypes={_TARGET: "categorical"}
         )
         self._subsampled = len(X) > self.max_context_size
-        for group, (estimator, size) in enumerate(zip(self.estimators, self._group_sizes)):
+        for group, (estimator, size) in enumerate(
+            zip(self.estimators, self._group_sizes, strict=True)
+        ):
             seed = self.random_state + group
             x, y_, num_estimators = x_context, y_context, size
             if self._subsampled:
@@ -199,7 +201,7 @@ class SeldonClassifier:
         X = _frame(X)
         query = sdm.TableTensor.from_pandas(df=X, stypes=self._stypes, device=self.device)
         log_proba = np.zeros((len(X), len(self.classes_)), dtype=np.float32)
-        for estimator, size in zip(self.estimators, self._group_sizes):
+        for estimator, size in zip(self.estimators, self._group_sizes, strict=True):
             q = query.expand(size, *query.size()) if self._subsampled else query
             with self._inference():
                 out = estimator.predict(q)
