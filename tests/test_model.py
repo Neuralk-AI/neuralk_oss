@@ -103,7 +103,7 @@ def test_from_pretrained_hub_names(tiny_model, tmp_path, monkeypatch):
     # A local directory is read in place.
     Seldon.from_pretrained(tmp_path / "hub", subfolder="seldon-tiny-classifier")
     assert len(calls) == 2
-    with pytest.raises(ValueError, match="seldon-classifier, seldon-small-classifier"):
+    with pytest.raises(ValueError, match="seldon-classifier, seldon-mini-classifier"):
         Seldon.from_pretrained("seldon-missing-classifier")
     with pytest.raises(FileNotFoundError):
         Seldon.from_pretrained("org/repo", subfolder="seldon-missing-classifier")
@@ -114,5 +114,5 @@ def test_hub_checkpoints():
 
     assert HUB_CHECKPOINTS == {
         "seldon-classifier": "Neuralk-AI/seldon",
-        "seldon-small-classifier": "Neuralk-AI/seldon-small",
+        "seldon-mini-classifier": "Neuralk-AI/seldon-mini",
     }

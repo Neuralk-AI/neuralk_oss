@@ -44,7 +44,7 @@ WEIGHTS_NAME = "model.safetensors"
 # as a directory of that name.
 HUB_CHECKPOINTS = {
     "seldon-classifier": "Neuralk-AI/seldon",
-    "seldon-small-classifier": "Neuralk-AI/seldon-small",
+    "seldon-mini-classifier": "Neuralk-AI/seldon-mini",
 }
 
 
@@ -224,7 +224,7 @@ class Seldon(nn.Module):
         ----------
         name_or_path : str or PathLike
             A local directory; else a checkpoint name of ``HUB_CHECKPOINTS``,
-            ``"seldon-classifier"`` or ``"seldon-small-classifier"``; else a
+            ``"seldon-classifier"`` or ``"seldon-mini-classifier"``; else a
             Hugging Face repository id
             (``"org/repo"``). A checkpoint on the Hub is downloaded once into
             the Hugging Face cache.

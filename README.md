@@ -13,7 +13,7 @@ one forward pass, with no gradient step.
 ```python
 from neuralk_oss import SeldonClassifier
 
-clf = SeldonClassifier.from_pretrained("seldon-small")  # or "seldon"
+clf = SeldonClassifier.from_pretrained("seldon-mini")  # or "seldon"
 clf.fit(X_train, y_train)  # pandas DataFrame (or array) and labels
 proba = clf.predict_proba(X_test)  # (n_rows, n_classes), columns in clf.classes_ order
 ```
@@ -23,7 +23,7 @@ proba = clf.predict_proba(X_test)  # (n_rows, n_classes), columns in clf.classes
 | model | checkpoint | task | parameters |
 | --- | --- | --- | --- |
 | `seldon` | `seldon-classifier` | classification, up to 10 classes per model call | 213.5M |
-| `seldon-small` | `seldon-small-classifier` | classification, up to 10 classes per model call | 27.4M |
+| `seldon-mini` | `seldon-mini-classifier` | classification, up to 10 classes per model call | 27.4M |
 
 `SeldonClassifier.from_pretrained` takes the model name and loads its
 classification checkpoint; `Seldon.from_pretrained` takes the checkpoint name.
@@ -34,12 +34,12 @@ A checkpoint is a directory holding `config.json` and `model.safetensors`.
 - a checkpoint name of the table above (or, for `SeldonClassifier`, a model
   name): downloaded from its Hugging Face repository,
   [`Neuralk-AI/seldon`](https://huggingface.co/Neuralk-AI/seldon) or
-  [`Neuralk-AI/seldon-small`](https://huggingface.co/Neuralk-AI/seldon-small),
+  [`Neuralk-AI/seldon-mini`](https://huggingface.co/Neuralk-AI/seldon-mini),
   where the checkpoint is a directory of that name, on the first call, then
   read from the Hugging Face cache (`~/.cache/huggingface`, or `HF_HOME`);
-- a local directory, read in place: `from_pretrained("path/to/seldon-small-classifier")`;
+- a local directory, read in place: `from_pretrained("path/to/seldon-mini-classifier")`;
 - any Hugging Face repository, with the checkpoint's directory and a revision:
-  `from_pretrained("org/repo", subfolder="seldon-small-classifier", revision="v1")`.
+  `from_pretrained("org/repo", subfolder="seldon-mini-classifier", revision="v1")`.
 
 The repositories are private for now: log in once with an account that can read
 them (`hf auth login`), or pass `token=...` to `from_pretrained`.
@@ -69,7 +69,7 @@ class MyRecipe(SeldonRecipe):
         return [sp.Identity(), sp.RankGaussian(max_knots=self.rank_gaussian_knots)]
 
 
-clf = SeldonClassifier.from_pretrained("seldon-small", recipe=MyRecipe())
+clf = SeldonClassifier.from_pretrained("seldon-mini", recipe=MyRecipe())
 ```
 
 ### The model alone
@@ -77,7 +77,7 @@ clf = SeldonClassifier.from_pretrained("seldon-small", recipe=MyRecipe())
 ```python
 from neuralk_oss import Seldon
 
-model = Seldon.from_pretrained("seldon-small-classifier")
+model = Seldon.from_pretrained("seldon-mini-classifier")
 context = model.encode_context(X_context, y_context, categorical_mask)  # (B, T, H), (B, T), (B, H)
 logits = model.predict_query(X_query, context, categorical_mask)  # (B, T_query, 10)
 ```

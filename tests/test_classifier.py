@@ -95,7 +95,7 @@ def test_from_pretrained_model_names(tiny_model, tmp_path, monkeypatch):
     monkeypatch.setattr(
         Seldon, "from_pretrained", lambda name, **_: loaded.append(str(name)) or tiny_model
     )
-    for name in ["seldon", "seldon-small", "seldon-small-classifier", "org/repo"]:
+    for name in ["seldon", "seldon-mini", "seldon-mini-classifier", "org/repo"]:
         SeldonClassifier.from_pretrained(name)
     # A local directory named like a model is read as such.
     (tmp_path / "seldon").mkdir()
@@ -103,8 +103,8 @@ def test_from_pretrained_model_names(tiny_model, tmp_path, monkeypatch):
     SeldonClassifier.from_pretrained("seldon")
     assert loaded == [
         "seldon-classifier",
-        "seldon-small-classifier",
-        "seldon-small-classifier",
+        "seldon-mini-classifier",
+        "seldon-mini-classifier",
         "org/repo",
         "seldon",
     ]

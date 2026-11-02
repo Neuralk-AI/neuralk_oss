@@ -114,7 +114,7 @@ class SeldonClassifier:
         token: str | None = None,
         **kwargs: Any,
     ) -> SeldonClassifier:
-        """The classifier of a saved model: a released model's name, ``"seldon"`` or ``"seldon-small"``, or what ``Seldon.from_pretrained`` takes (a local directory, a checkpoint name such as ``"seldon-small-classifier"``, a Hub repository); ``kwargs`` are the constructor's."""
+        """The classifier of a saved model: a released model's name, ``"seldon"`` or ``"seldon-mini"``, or what ``Seldon.from_pretrained`` takes (a local directory, a checkpoint name such as ``"seldon-mini-classifier"``, a Hub repository); ``kwargs`` are the constructor's."""
         # A model name is its classification checkpoint; a local directory of that name wins.
         checkpoint = f"{name_or_path}-classifier"
         if subfolder is None and checkpoint in HUB_CHECKPOINTS and not Path(name_or_path).is_dir():

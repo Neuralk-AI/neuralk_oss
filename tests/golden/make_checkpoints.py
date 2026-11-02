@@ -17,7 +17,7 @@ from tests.conftest import tiny_config
 GOLDEN = Path(__file__).parent
 
 CHECKPOINTS = {
-    # The small checkpoint's architecture, scaled down.
+    # The mini checkpoint's architecture, scaled down.
     "seldon-tiny-classifier": tiny_config(),
     # LayerNorm, biases, no ICL projection, grouped query heads, no fp32 islands.
     "seldon-tiny-classifier-variant": tiny_config(
