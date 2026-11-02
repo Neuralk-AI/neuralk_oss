@@ -111,12 +111,13 @@ clf = SeldonClassifier.from_pretrained("seldon-mini", n_estimators=8, recipe=rec
 
 A YAML config sets a classifier and its recipe in one file: `checkpoint`,
 any keyword argument of `from_pretrained`, and `recipe`, `SeldonRecipe`'s
-keyword arguments, or a list of them, one per group of members. `seldon-mini`
-is packaged, the setup neuralk_model evaluates as `seldon_mini`, half the
-members shuffling categories:
+keyword arguments, or a list of them, one per group of members. Two configs
+are packaged, each with half the members shuffling categories: `seldon`, 8
+members of Seldon, and `seldon-mini`, 4 members of Seldon-Mini:
 
 ```yaml
-checkpoint: seldon-mini
+# seldon.yaml
+checkpoint: seldon
 n_estimators: 8
 max_context_size: 200000
 random_state: 0
@@ -129,6 +130,7 @@ recipe:
 ```
 
 ```python
+clf = SeldonClassifier.from_config("seldon")
 clf = SeldonClassifier.from_config("seldon-mini")
 clf = SeldonClassifier.from_config(
     "my_run.yaml", device="cpu"
@@ -136,7 +138,7 @@ clf = SeldonClassifier.from_config(
 ```
 
 [`template.yaml`](src/neuralk_oss/configs/template.yaml), packaged next to
-`seldon-mini`, lists every argument a config can set, at its default, with what
+them, lists every argument a config can set, at its default, with what
 it does: copy it and keep the keys you change.
 
 ### The model alone

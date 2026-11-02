@@ -153,12 +153,17 @@ def test_from_pretrained_model_names(tiny_model, tmp_path, monkeypatch):
 TINY = Path(__file__).parent / "golden" / "seldon-tiny-classifier"
 
 
-def test_packaged_config():
+@pytest.mark.parametrize(
+    ("name", "halves"),
+    [("seldon", ([0, 1, 2, 3], [4, 5, 6, 7])), ("seldon-mini", ([0, 1], [2, 3]))],
+)
+def test_packaged_config(name, halves):
     # The packaged checkpoint is downloaded: the tiny one stands in for it.
-    clf = SeldonClassifier.from_config("seldon-mini", checkpoint=TINY, device="cpu")
-    assert (clf.n_estimators, clf.max_context_size, clf.random_state) == (8, 200_000, 0)
+    clf = SeldonClassifier.from_config(name, checkpoint=TINY, device="cpu")
+    size = len(halves[0]) + len(halves[1])
+    assert (clf.n_estimators, clf.max_context_size, clf.random_state) == (size, 200_000, 0)
     sorted_codes, shuffled = (e.recipe for e in clf.estimators)
-    assert (sorted_codes.members, shuffled.members) == ([0, 1, 2, 3], [4, 5, 6, 7])
+    assert (sorted_codes.members, shuffled.members) == halves
     assert repr(sorted_codes.build()) == repr(SeldonRecipe().build())
     assert repr(shuffled.build()) == repr(SeldonRecipe(shuffle_categories=True).build())
     X, y = _frame(80, 3)
