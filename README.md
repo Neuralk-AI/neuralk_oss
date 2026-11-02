@@ -40,10 +40,11 @@ A checkpoint is a directory holding `config.json` and `model.safetensors`.
   name): downloaded from its Hugging Face repository,
   [`Neuralk-AI/seldon`](https://huggingface.co/Neuralk-AI/seldon) or
   [`Neuralk-AI/seldon-mini`](https://huggingface.co/Neuralk-AI/seldon-mini),
-  where the checkpoint is a directory of that name, on the first call, then
-  read from the Hugging Face cache (`~/.cache/huggingface`, or `HF_HOME`);
+  where the checkpoint is at the root, on the first call, then read from the
+  Hugging Face cache (`~/.cache/huggingface`, or `HF_HOME`);
 - a local directory, read in place: `from_pretrained("path/to/seldon-mini-classifier")`;
-- any Hugging Face repository, with the checkpoint's directory and a revision:
+- any Hugging Face repository, its root or the checkpoint's directory, and a
+  revision: `from_pretrained("Neuralk-AI/seldon-mini")`,
   `from_pretrained("org/repo", subfolder="seldon-mini-classifier", revision="v1")`.
 
 The repositories are private for now: log in once with an account that can read

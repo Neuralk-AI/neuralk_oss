@@ -75,25 +75,22 @@ def test_from_pretrained_hub_names(tiny_model, tmp_path, monkeypatch):
     from neuralk_oss.model import seldon
 
     tiny_model.save_pretrained(tmp_path / "hub" / "seldon-tiny-classifier")
+    tiny_model.save_pretrained(tmp_path / "hub_root")
     calls = []
 
     def fake_download(repo_id, *, revision, token, allow_patterns):
         calls.append((repo_id, revision, allow_patterns))
-        return str(tmp_path / "hub")
+        return str(tmp_path / ("hub_root" if repo_id == "org/tiny" else "hub"))
 
     monkeypatch.setattr(seldon, "snapshot_download", fake_download)
     monkeypatch.setitem(seldon.HUB_CHECKPOINTS, "seldon-tiny-classifier", "org/tiny")
     monkeypatch.chdir(tmp_path)
-    # A checkpoint name downloads from its own repository.
+    # A checkpoint name downloads the root of its own repository.
     Seldon.from_pretrained("seldon-tiny-classifier")
     # A repository id, with the checkpoint's subfolder and a revision.
     Seldon.from_pretrained("org/repo", subfolder="seldon-tiny-classifier", revision="v1")
     assert calls == [
-        (
-            "org/tiny",
-            None,
-            ["seldon-tiny-classifier/config.json", "seldon-tiny-classifier/model.safetensors"],
-        ),
+        ("org/tiny", None, ["config.json", "model.safetensors"]),
         (
             "org/repo",
             "v1",

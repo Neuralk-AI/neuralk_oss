@@ -40,8 +40,8 @@ from neuralk_oss.model.row import RowInteraction
 
 CONFIG_NAME = "config.json"
 WEIGHTS_NAME = "model.safetensors"
-# The released checkpoints by name: the Hugging Face repository holding each,
-# as a directory of that name.
+# The released checkpoints by name: the Hugging Face repository holding each at
+# its root, where the Hub counts downloads (a request for the root config.json).
 HUB_CHECKPOINTS = {
     "seldon-classifier": "Neuralk-AI/seldon",
     "seldon-mini-classifier": "Neuralk-AI/seldon-mini",
@@ -272,7 +272,7 @@ def resolve_checkpoint(
 ) -> Path:
     """The local directory of a checkpoint, downloaded from the Hub when ``name_or_path`` is not a local directory.
 
-    A name without ``/`` is a checkpoint of ``HUB_CHECKPOINTS``: its repository's ``subfolder``.
+    A name without ``/`` is a checkpoint of ``HUB_CHECKPOINTS``: the root of its repository.
     """
     local = Path(name_or_path) / (subfolder or "")
     if local.is_dir():
@@ -281,7 +281,7 @@ def resolve_checkpoint(
     if "/" in name:
         repo_id = name
     elif subfolder is None and name in HUB_CHECKPOINTS:
-        repo_id, subfolder = HUB_CHECKPOINTS[name], name
+        repo_id = HUB_CHECKPOINTS[name]
     else:
         raise ValueError(
             f"{name!r} is neither a local directory, a checkpoint name ({', '.join(HUB_CHECKPOINTS)}) "
