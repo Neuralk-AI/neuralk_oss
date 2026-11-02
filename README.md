@@ -67,6 +67,7 @@ clf = SeldonClassifier.from_pretrained("seldon-small-classifier", recipe=recipe)
 | parameter | default | |
 | --- | --- | --- |
 | `transforms` | `("identity", "power", "robust", "rank_gaussian")` | numerical transforms the members take in turn, one each |
+| `shuffle_categories` | `False` | half the members read categorical codes in a random order, per column; members in blocks of `len(transforms)`, so it needs more members than that |
 | `flip_sign` | `True` | each member negates a random half of its numerical columns |
 | `feature_shuffle` | `"latin"` | column permutation per member: `"latin"`, `"random"` or `None` |
 | `class_shift` | `True` | each member shifts the class codes by its own offset |

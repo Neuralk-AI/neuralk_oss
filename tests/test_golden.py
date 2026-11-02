@@ -154,6 +154,13 @@ def recipe_single_view(rng):
     return X, y, {"recipe": recipe}
 
 
+def shuffled_categories(rng):
+    X, y, _ = multiclass_mixed(rng)
+    # Blocks of 2 members, so the third of the golden tests' 3 shuffles.
+    recipe = SeldonRecipe(shuffle_categories=True, transforms=("identity", "power"))
+    return X, y, {"recipe": recipe}
+
+
 CLASSIFIER_CASES = [
     binary_numerical,
     multiclass_mixed,
@@ -167,6 +174,7 @@ CLASSIFIER_CASES = [
     variant_checkpoint,
     recipe_two_transforms,
     recipe_single_view,
+    shuffled_categories,
 ]
 
 

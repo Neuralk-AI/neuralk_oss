@@ -27,6 +27,7 @@ from typing import Any, Literal
 
 import sdm.processing as sp
 import torch
+from sdm import EnsembleTable
 
 
 class SeldonRecipe:
@@ -57,6 +58,12 @@ class SeldonRecipe:
         ``"identity"``, ``"power"`` (Yeo-Johnson), ``"robust"`` (median and
         quartile scaling, soft-clipped to +-3) and ``"rank_gaussian"``; their
         number is the number of distinct views.
+    shuffle_categories : bool
+        Whether half the members read each categorical column with its codes
+        in a random order, one permutation per column, instead of sorted by
+        value: members in blocks of ``len(transforms)``, sorted then shuffled,
+        so each view of the numbers meets both orders. With
+        ``n_estimators`` up to ``len(transforms)``, no member shuffles.
     flip_sign : bool
         Whether each member negates a random half of its numerical columns.
     feature_shuffle : {"latin", "random"} or None
@@ -78,6 +85,7 @@ class SeldonRecipe:
     clip_sigma = 4.0
     category_count_min_cardinality = 50
     transforms: tuple[str, ...] = ("identity", "power", "robust", "rank_gaussian")
+    shuffle_categories = False
     flip_sign = True
     feature_shuffle: Literal["latin", "random"] | None = "latin"
     class_shift = True
@@ -118,9 +126,16 @@ class SeldonRecipe:
         return [self.numerical_processor(), *([sp.FlipSign()] if self.flip_sign else [])]
 
     def categorical_features(self) -> list[sp.Processor]:
-        """The steps of a categorical column: its codes, with their counts for a large vocabulary, read as numbers."""
+        """The steps of a categorical column: its codes (shuffled in some members), with their counts for a large vocabulary, read as numbers."""
+        shuffle = sp.ShuffleCategories(method="random")
+        block = len(self.transforms)
         return [
             sp.AlignCategories(sort_by="value"),
+            *(
+                [_BlockChoice(sp.Identity(), shuffle, block=block)]
+                if self.shuffle_categories
+                else []
+            ),
             sp.AddCategoryCounts(min_cardinality=self.category_count_min_cardinality),
             sp.ToNumerical(),
             self.numerical_processor(),
@@ -161,6 +176,20 @@ class SeldonRecipe:
         return sp.TaskDispatch(
             classification=classification if self.average_logits else classification[::-1],
             regression=[sp.SortQuantiles(), sp.AverageEstimators(trim_fraction=0.2)],
+        )
+
+
+class _BlockChoice(sp.Choice):
+    """A choice by blocks of members: the first ``block`` take option 0, the next option 1, and so on, cycling."""
+
+    def __init__(self, *options: object, block: int) -> None:
+        super().__init__(*options, method="round_robin")
+        self.block = block
+
+    # shortcut: overrides sdm's private hook, pinned at 0.2.1; recheck on an sdm upgrade.
+    def _draw_option_ids(self, ensemble_table: EnsembleTable, **kwargs: Any) -> tuple[int, ...]:
+        return tuple(
+            (member // self.block) % len(self.options) for member in range(len(ensemble_table))
         )
 
 

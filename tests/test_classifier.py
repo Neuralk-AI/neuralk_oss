@@ -85,6 +85,7 @@ def test_recipe_override(tiny_model):
     [
         {"max_features": 2},
         {"transforms": ("identity", "rank_gaussian")},
+        {"shuffle_categories": True},
         {"flip_sign": False},
         {"feature_shuffle": "random"},
         {"feature_shuffle": None},
@@ -96,11 +97,27 @@ def test_recipe_override(tiny_model):
 )
 def test_recipe_parameters(tiny_model, params):
     X, y = _frame(80, 3)
-    clf = SeldonClassifier(tiny_model, n_estimators=4, device="cpu", recipe=SeldonRecipe(**params))
-    default = SeldonClassifier(tiny_model, n_estimators=4, device="cpu")
+    # 8 members: shuffle_categories leaves the first len(transforms), 4, alone.
+    clf = SeldonClassifier(tiny_model, n_estimators=8, device="cpu", recipe=SeldonRecipe(**params))
+    default = SeldonClassifier(tiny_model, n_estimators=8, device="cpu")
     p = clf.fit(X[:60], y[:60]).predict_proba(X[60:])
     np.testing.assert_allclose(p.sum(axis=1), 1, rtol=1e-5)
     assert not np.allclose(p, default.fit(X[:60], y[:60]).predict_proba(X[60:]))
+
+
+def test_shuffle_categories_blocks(tiny_model):
+    X, y = _frame(80, 3)
+    clf = SeldonClassifier(
+        tiny_model,
+        n_estimators=8,
+        device="cpu",
+        recipe=SeldonRecipe(shuffle_categories=True, transforms=("identity", "power")),
+    )
+    clf.fit(X[:60], y[:60])
+    recipe = clf.estimator._cache["recipe_execution"].recipe
+    (choice,) = [m for m in recipe.features.modules() if type(m).__name__ == "_BlockChoice"]
+    # Blocks of len(transforms) members: sorted codes, then shuffled ones.
+    assert choice._option_ids == (0, 0, 1, 1, 0, 0, 1, 1)
 
 
 def test_recipe_rejects_unknown_parameters():
