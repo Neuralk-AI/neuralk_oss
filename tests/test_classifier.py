@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import sdm.processing as sp
 import yaml
 
 from neuralk_oss import SeldonClassifier, SeldonRecipe
@@ -89,7 +90,7 @@ def test_recipe_override(tiny_model):
     [
         {"max_features": 2},
         {"transforms": ("identity", "rank_gaussian")},
-        {"shuffle_categories": True},
+        {"half_shuffle": True},
         {"flip_sign": False},
         {"feature_shuffle": "random"},
         {"feature_shuffle": None},
@@ -101,7 +102,6 @@ def test_recipe_override(tiny_model):
 )
 def test_recipe_parameters(tiny_model, params):
     X, y = _frame(80, 3)
-    # 8 members: shuffle_categories leaves the first len(transforms), 4, alone.
     clf = SeldonClassifier(tiny_model, n_estimators=8, device="cpu", recipe=SeldonRecipe(**params))
     default = SeldonClassifier(tiny_model, n_estimators=8, device="cpu")
     p = clf.fit(X[:60], y[:60]).predict_proba(X[60:])
@@ -153,19 +153,12 @@ def test_from_pretrained_model_names(tiny_model, tmp_path, monkeypatch):
 TINY = Path(__file__).parent / "golden" / "seldon-tiny-classifier"
 
 
-@pytest.mark.parametrize(
-    ("name", "halves"),
-    [("seldon", ([0, 1, 2, 3], [4, 5, 6, 7])), ("seldon-mini", ([0, 1], [2, 3]))],
-)
-def test_packaged_config(name, halves):
+@pytest.mark.parametrize(("name", "size"), [("seldon", 8), ("seldon-mini", 4)])
+def test_packaged_config(name, size):
     # The packaged checkpoint is downloaded: the tiny one stands in for it.
     clf = SeldonClassifier.from_config(name, checkpoint=TINY, device="cpu")
-    size = len(halves[0]) + len(halves[1])
     assert (clf.n_estimators, clf.max_context_size, clf.random_state) == (size, 200_000, 0)
-    sorted_codes, shuffled = (e.recipe for e in clf.estimators)
-    assert (sorted_codes.members, shuffled.members) == halves
-    assert repr(sorted_codes.build()) == repr(SeldonRecipe().build())
-    assert repr(shuffled.build()) == repr(SeldonRecipe(shuffle_categories=True).build())
+    assert repr(clf.estimator.recipe.build()) == repr(SeldonRecipe(half_shuffle=True).build())
     X, y = _frame(80, 3)
     assert clf.fit(X[:60], y[:60]).predict_proba(X[60:]).shape == (20, 3)
 
@@ -177,7 +170,7 @@ def test_config_file(tmp_path):
     )
     clf = SeldonClassifier.from_config(path, device="cpu")
     assert clf.n_estimators == 3
-    assert clf.estimators[0].recipe.transforms == ["identity", "robust"]
+    assert clf.estimator.recipe.transforms == ["identity", "robust"]
     path.write_text(f"checkpoint: {TINY}\nrecipe:\n  max_feature: 3\n")
     with pytest.raises(TypeError, match="max_feature"):
         SeldonClassifier.from_config(path)
@@ -199,75 +192,32 @@ def test_template_config_lists_every_argument_at_its_default():
     assert repr(recipe.build()) == repr(SeldonRecipe().build())
     clf = SeldonClassifier.from_config(path, checkpoint=TINY, device="cpu")
     default = SeldonClassifier.from_pretrained(TINY, device="cpu")
-    assert {k: v for k, v in vars(clf).items() if k != "estimators"} == {
-        k: v for k, v in vars(default).items() if k != "estimators"
+    assert {k: v for k, v in vars(clf).items() if k != "estimator"} == {
+        k: v for k, v in vars(default).items() if k != "estimator"
     }
 
 
-def test_recipes_per_member_group(tiny_model):
-    X, y = _frame(80, 3)
-    kwargs = {"n_estimators": 4, "device": "cpu"}
-    one = SeldonClassifier(tiny_model, **kwargs).fit(X[:60], y[:60]).predict_proba(X[60:])
-    listed = SeldonClassifier(tiny_model, recipe=[SeldonRecipe()], **kwargs)
-    np.testing.assert_array_equal(listed.fit(X[:60], y[:60]).predict_proba(X[60:]), one)
-    halves = [
-        SeldonRecipe(members=[0, 1], shuffle_categories=False),
-        SeldonRecipe(members=[2, 3], shuffle_categories=True),
-    ]
-    clf = SeldonClassifier(tiny_model, recipe=halves, **kwargs)
-    p = clf.fit(X[:60], y[:60]).predict_proba(X[60:])
-    np.testing.assert_allclose(p.sum(axis=1), 1, rtol=1e-5)
-    assert not np.allclose(p, one)
-    assert clf._group_sizes == [2, 2]
-
-
-def test_shuffle_categories(tiny_model):
-    X, y = _frame(80, 3)
-    recipe = SeldonRecipe(shuffle_categories=True)
-    clf = SeldonClassifier(tiny_model, n_estimators=2, device="cpu", recipe=recipe)
-    clf.fit(X[:60], y[:60])
-    built = clf.estimators[0]._cache["recipe_execution"].recipe
-    names = [type(m).__name__ for m in built.features.modules()]
-    assert "ShuffleCategories" in names
-
-
 @pytest.mark.parametrize(
-    ("members", "match"),
-    [
-        (["all", [0, 1]], "only one"),
-        ([[0, 1], [1, 2]], r"missing \[3\], repeated \[1\]"),
-        ([[0, 1], [2, 5]], r"missing \[3\].*out of range \[5\]"),
-    ],
+    ("n_estimators", "max_context_size", "shuffled"),
+    [(8, 200_000, [0, 0, 0, 0, 1, 1, 1, 1]), (4, 200_000, [0, 0, 1, 1]), (3, 25, [0, 0, 1])],
 )
-def test_recipe_members_must_cover_the_ensemble(tiny_model, members, match):
-    recipes = [SeldonRecipe(members=m) for m in members]
-    with pytest.raises(ValueError, match=match):
-        SeldonClassifier(tiny_model, n_estimators=4, device="cpu", recipe=recipes)
-
-
-def test_config_with_several_recipes(tmp_path):
-    path = tmp_path / "run.yaml"
-    path.write_text(
-        f"""checkpoint: {TINY}
-n_estimators: 4
-recipe:
-  - members: [0, 1]
-    shuffle_categories: false
-  - members: [2, 3]
-    shuffle_categories: true
-"""
-    )
-    clf = SeldonClassifier.from_config(path, device="cpu")
-    assert [e.recipe.shuffle_categories for e in clf.estimators] == [False, True]
-
-
-def test_recipe_groups_on_a_subsampled_context(tiny_model):
+def test_half_shuffle(tiny_model, n_estimators, max_context_size, shuffled):
+    # One ensemble: the members cycle through every transform, the second half shuffles.
     X, y = _frame(80, 3)
-    recipes = [SeldonRecipe(members=[0]), SeldonRecipe(members=[1, 2])]
     clf = SeldonClassifier(
-        tiny_model, n_estimators=3, device="cpu", max_context_size=25, recipe=recipes
+        tiny_model,
+        n_estimators=n_estimators,
+        device="cpu",
+        max_context_size=max_context_size,
+        recipe=SeldonRecipe(half_shuffle=True),
     )
     assert clf.fit(X[:60], y[:60]).predict_proba(X[60:]).shape == (20, 3)
+    built = clf.estimator._cache["recipe_execution"].recipe
+    choices = [m for m in built.features.modules() if isinstance(m, sp.Choice)]
+    halves = {m._option_ids for m in choices if type(m).__name__ == "_HalfChoice"}
+    transforms = {m._option_ids for m in choices if type(m).__name__ == "Choice"}
+    assert halves == {tuple(shuffled)}
+    assert transforms == {tuple(i % 4 for i in range(n_estimators))}
 
 
 def test_model_names_take_their_packaged_config(tiny_model, monkeypatch):
@@ -277,12 +227,11 @@ def test_model_names_take_their_packaged_config(tiny_model, monkeypatch):
     for name, size in [("seldon", 8), ("seldon-mini", 4)]:
         clf = SeldonClassifier.from_pretrained(name, device="cpu")
         assert clf.n_estimators == size
-        assert [e.recipe.shuffle_categories for e in clf.estimators] == [False, True]
-    # Arguments override the config; changing the members needs matching recipes.
-    clf = SeldonClassifier.from_pretrained("seldon", recipe=SeldonRecipe(), n_estimators=2)
-    assert clf.n_estimators == 2 and len(clf.estimators) == 1
-    with pytest.raises(ValueError, match="needs recipes whose members match it"):
-        SeldonClassifier.from_pretrained("seldon", n_estimators=16)
+        assert clf.estimator.recipe.half_shuffle
+    # Arguments override the config.
+    recipe = SeldonRecipe()
+    clf = SeldonClassifier.from_pretrained("seldon", recipe=recipe, n_estimators=2)
+    assert clf.n_estimators == 2 and clf.estimator.recipe is recipe
     # Any other checkpoint takes the constructor's defaults.
     clf = SeldonClassifier.from_pretrained(TINY, device="cpu")
-    assert clf.n_estimators == 8 and len(clf.estimators) == 1
+    assert clf.n_estimators == 8

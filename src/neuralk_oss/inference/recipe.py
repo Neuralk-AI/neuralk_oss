@@ -27,6 +27,7 @@ from typing import Any, Literal
 
 import sdm.processing as sp
 import torch
+from sdm import EnsembleTable
 
 
 class SeldonRecipe:
@@ -57,14 +58,10 @@ class SeldonRecipe:
         ``"identity"``, ``"power"`` (Yeo-Johnson), ``"robust"`` (median and
         quartile scaling, soft-clipped to +-3) and ``"rank_gaussian"``; their
         number is the number of distinct views.
-    members : "all" or list of int
-        The ensemble members this recipe preprocesses: all of them, or, with
-        several recipes handed to the classifier, these indices.
-    shuffle_categories : bool
-        Whether the members read each categorical column with its codes in a
-        random order, one permutation per column, instead of sorted by value.
-        To shuffle only some members, give them a recipe of their own (see
-        ``members``).
+    half_shuffle : bool
+        Whether the second half of the members read each categorical column
+        with its codes in a random order, one permutation per column, instead
+        of sorted by value; the first half (rounded up) keep them sorted.
     flip_sign : bool
         Whether each member negates a random half of its numerical columns.
     feature_shuffle : {"latin", "random"} or None
@@ -86,8 +83,7 @@ class SeldonRecipe:
     clip_sigma = 4.0
     category_count_min_cardinality = 50
     transforms: tuple[str, ...] = ("identity", "power", "robust", "rank_gaussian")
-    members: Literal["all"] | list[int] = "all"
-    shuffle_categories = False
+    half_shuffle = False
     flip_sign = True
     feature_shuffle: Literal["latin", "random"] | None = "latin"
     class_shift = True
@@ -101,14 +97,6 @@ class SeldonRecipe:
                 raise TypeError(f"SeldonRecipe has no parameter {name!r}")
             setattr(self, name, value)
         unknown = set(self.transforms) - set(_TRANSFORMS)
-        if self.members != "all" and not (
-            isinstance(self.members, list | tuple)
-            and self.members
-            and all(isinstance(m, int) for m in self.members)
-        ):
-            raise ValueError(
-                f"members must be 'all' or a list of member indices, got {self.members!r}"
-            )
         if not self.transforms or unknown:
             raise ValueError(
                 f"transforms must be a non-empty tuple of {sorted(_TRANSFORMS)}, got {self.transforms!r}"
@@ -136,10 +124,14 @@ class SeldonRecipe:
         return [self.numerical_processor(), *([sp.FlipSign()] if self.flip_sign else [])]
 
     def categorical_features(self) -> list[sp.Processor]:
-        """The steps of a categorical column: its codes (shuffled or not), with their counts for a large vocabulary, read as numbers."""
+        """The steps of a categorical column: its codes (shuffled in the second half of the members), with their counts for a large vocabulary, read as numbers."""
         return [
             sp.AlignCategories(sort_by="value"),
-            *([sp.ShuffleCategories(method="random")] if self.shuffle_categories else []),
+            *(
+                [_HalfChoice(sp.Identity(), sp.ShuffleCategories(method="random"))]
+                if self.half_shuffle
+                else []
+            ),
             sp.AddCategoryCounts(min_cardinality=self.category_count_min_cardinality),
             sp.ToNumerical(),
             self.numerical_processor(),
@@ -181,6 +173,18 @@ class SeldonRecipe:
             classification=classification if self.average_logits else classification[::-1],
             regression=[sp.SortQuantiles(), sp.AverageEstimators(trim_fraction=0.2)],
         )
+
+
+class _HalfChoice(sp.Choice):
+    """A choice by halves of the ensemble: the first half of the members (rounded up) take option 0, the others option 1."""
+
+    def __init__(self, *options: object) -> None:
+        super().__init__(*options, method="round_robin")
+
+    # shortcut: overrides sdm's private hook, pinned at 0.2.1; recheck on an sdm upgrade.
+    def _draw_option_ids(self, ensemble_table: EnsembleTable, **kwargs: Any) -> tuple[int, ...]:
+        n = len(ensemble_table)
+        return tuple(int(member >= (n + 1) // 2) for member in range(n))
 
 
 _TRANSFORMS: dict[str, Callable[[SeldonRecipe], sp.Processor | list[sp.Processor]]] = {

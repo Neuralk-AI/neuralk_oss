@@ -72,12 +72,8 @@ class SeldonClassifier:
         memory-efficient kernels run instead.
     random_state : int, default=0
         Seed of the context subsets and of sdm's per-member preprocessing.
-    recipe : SeldonRecipe or list of SeldonRecipe, optional
-        The preprocessing; ``SeldonRecipe()`` by default. Several recipes each
-        preprocess their ``members``, which together cover every member once;
-        each group runs as its own ensemble, seeded ``random_state`` plus its
-        position, and the groups' log-probabilities are averaged, weighted by
-        their sizes: with ``average_logits``, the average of all members' logits.
+    recipe : SeldonRecipe, optional
+        The preprocessing; ``SeldonRecipe()`` by default.
     query_chunk_size : int, default=8192
         Test rows run through the model together, per member.
     estimator_batch_size : int, None or "auto", default="auto"
@@ -97,7 +93,7 @@ class SeldonClassifier:
         amp: bool = True,
         random_state: int = 0,
         cudnn_attention: bool = False,
-        recipe: SeldonRecipe | list[SeldonRecipe] | None = None,
+        recipe: SeldonRecipe | None = None,
         query_chunk_size: int = 8192,
         estimator_batch_size: int | Literal["auto"] | None = "auto",
     ) -> None:
@@ -110,11 +106,7 @@ class SeldonClassifier:
         self.cudnn_attention = cudnn_attention
         self.random_state = random_state
         self.estimator_batch_size = estimator_batch_size
-        recipes = [SeldonRecipe() if recipe is None else recipe]
-        if isinstance(recipe, list):
-            recipes = recipe
-        self._group_sizes = _group_sizes(recipes, n_estimators)
-        self.estimators = [SeldonICL(model, r, query_chunk_size).to(self.device) for r in recipes]
+        self.estimator = SeldonICL(model, recipe, query_chunk_size).to(self.device)
 
     @classmethod
     def from_pretrained(
@@ -129,7 +121,7 @@ class SeldonClassifier:
         """The classifier of a saved model: a released model's name, ``"seldon"`` or ``"seldon-mini"``, or what ``Seldon.from_pretrained`` takes (a local directory, a checkpoint name such as ``"seldon-mini-classifier"``, a Hub repository); ``kwargs`` are the constructor's.
 
         A released model's name also takes the settings of its packaged config
-        (``configs/<name>.yaml``: members, recipe, ...), which ``kwargs``
+        (``configs/<name>.yaml``: n_estimators, recipe, ...), which ``kwargs``
         override; anything else takes the constructor's defaults.
         """
         # A model name is its classification checkpoint; a local directory of that name wins.
@@ -172,51 +164,43 @@ class SeldonClassifier:
         y_context = sdm.TableTensor.from_pandas(
             df=pd.DataFrame({_TARGET: codes}), stypes={_TARGET: "categorical"}
         )
+        num_estimators: int | None = self.n_estimators
         self._subsampled = len(X) > self.max_context_size
-        for group, (estimator, size) in enumerate(
-            zip(self.estimators, self._group_sizes, strict=True)
-        ):
-            seed = self.random_state + group
-            x, y_, num_estimators = x_context, y_context, size
-            if self._subsampled:
-                generator = torch.Generator().manual_seed(seed)
-                repeats = -(-size * self.max_context_size // len(X))
-                permutations = [torch.randperm(len(X), generator=generator) for _ in range(repeats)]
-                shape = (size, self.max_context_size)
-                index = torch.cat(permutations)[: shape[0] * shape[1]]
-                x, y_ = x[index].unflatten(0, shape), y_[index].unflatten(0, shape)
-                num_estimators = None
-            batch_size = self.estimator_batch_size
-            if batch_size == "auto":
-                n_rows, n_features = x.shape[-2:]
-                batch_size = member_batch_size(n_rows, n_features, size)
-            with self._inference():
-                estimator.fit(
-                    x=x.to(self.device),
-                    y=y_.to(self.device),
-                    num_estimators=num_estimators,
-                    estimator_batch_size=batch_size,
-                    generator=torch.Generator(self.device).manual_seed(seed),
-                )
+        if self._subsampled:
+            generator = torch.Generator().manual_seed(self.random_state)
+            repeats = -(-self.n_estimators * self.max_context_size // len(X))
+            permutations = [torch.randperm(len(X), generator=generator) for _ in range(repeats)]
+            shape = (self.n_estimators, self.max_context_size)
+            index = torch.cat(permutations)[: shape[0] * shape[1]]
+            x_context = x_context[index].unflatten(0, shape)
+            y_context = y_context[index].unflatten(0, shape)
+            num_estimators = None
+        batch_size = self.estimator_batch_size
+        if batch_size == "auto":
+            n_rows, n_features = x_context.shape[-2:]
+            batch_size = member_batch_size(n_rows, n_features, self.n_estimators)
+        with self._inference():
+            self.estimator.fit(
+                x=x_context.to(self.device),
+                y=y_context.to(self.device),
+                num_estimators=num_estimators,
+                estimator_batch_size=batch_size,
+                generator=torch.Generator(self.device).manual_seed(self.random_state),
+            )
         return self
 
     def predict_proba(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
         """Class probabilities of the rows of ``X``, ``(n_rows, n_classes)`` in the order of ``classes_``."""
         X = _frame(X)
         query = sdm.TableTensor.from_pandas(df=X, stypes=self._stypes, device=self.device)
-        log_proba = np.zeros((len(X), len(self.classes_)), dtype=np.float32)
-        for estimator, size in zip(self.estimators, self._group_sizes, strict=True):
-            q = query.expand(size, *query.size()) if self._subsampled else query
-            with self._inference():
-                out = estimator.predict(q)
-            codes = [int(code) for code in out.columns[sdm.Stype.numerical]]
-            proba = np.zeros((len(X), len(self.classes_)), dtype=np.float32)
-            proba[:, codes] = out.numerical.float().cpu().numpy()
-            if len(self.estimators) == 1:
-                return proba
-            log_proba += np.log(np.maximum(proba, 1e-30)) * (size / self.n_estimators)
-        proba = np.exp(log_proba - log_proba.max(axis=1, keepdims=True))
-        return proba / proba.sum(axis=1, keepdims=True)
+        if self._subsampled:
+            query = query.expand(self.n_estimators, *query.size())
+        with self._inference():
+            out = self.estimator.predict(query)
+        codes = [int(code) for code in out.columns[sdm.Stype.numerical]]
+        proba = np.zeros((len(X), len(self.classes_)), dtype=np.float32)
+        proba[:, codes] = out.numerical.float().cpu().numpy()
+        return proba
 
     def predict(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
         """The most probable class of each row of ``X``."""
@@ -235,33 +219,11 @@ class SeldonClassifier:
 
 
 def _read_config(path: Path | Traversable) -> dict[str, Any]:
-    """A YAML config's keys, its ``recipe`` built as ``SeldonRecipe``s."""
+    """A YAML config's keys, its ``recipe`` built as a ``SeldonRecipe``."""
     params = yaml.safe_load(path.read_text()) or {}
-    recipe = params.get("recipe")
-    if isinstance(recipe, dict):
-        params["recipe"] = SeldonRecipe(**recipe)
-    elif isinstance(recipe, list):
-        params["recipe"] = [SeldonRecipe(**r) for r in recipe]
+    if isinstance(params.get("recipe"), dict):
+        params["recipe"] = SeldonRecipe(**params["recipe"])
     return params
-
-
-def _group_sizes(recipes: list[SeldonRecipe], n_estimators: int) -> list[int]:
-    """Each recipe's number of members, checking that their ``members`` cover the ensemble once."""
-    if any(r.members == "all" for r in recipes):
-        if len(recipes) > 1:
-            raise ValueError("a recipe with members='all' must be the only one")
-        return [n_estimators]
-    members = [m for r in recipes for m in r.members]
-    if sorted(members) != list(range(n_estimators)):
-        missing = sorted(set(range(n_estimators)) - set(members))
-        repeated = sorted({m for m in members if members.count(m) > 1})
-        outside = sorted(set(members) - set(range(n_estimators)))
-        raise ValueError(
-            f"the recipes' members must cover members 0 to {n_estimators - 1} once each: "
-            f"missing {missing}, repeated {repeated}, out of range {outside}; "
-            "a different n_estimators needs recipes whose members match it"
-        )
-    return [len(r.members) for r in recipes]
 
 
 def _frame(X: pd.DataFrame | np.ndarray) -> pd.DataFrame:

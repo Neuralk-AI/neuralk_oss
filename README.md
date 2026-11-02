@@ -73,8 +73,7 @@ clf = SeldonClassifier.from_pretrained("seldon-mini", recipe=recipe)
 | parameter | default | |
 | --- | --- | --- |
 | `transforms` | `("identity", "power", "robust", "rank_gaussian")` | numerical transforms the members take in turn, one each |
-| `shuffle_categories` | `False` | the members read categorical codes in a random order per column, instead of sorted; for some members only, see below |
-| `members` | `"all"` | the members this recipe preprocesses: see below |
+| `half_shuffle` | `False` | the second half of the members read categorical codes in a random order per column, the first half sorted |
 | `flip_sign` | `True` | each member negates a random half of its numerical columns |
 | `feature_shuffle` | `"latin"` | column permutation per member: `"latin"`, `"random"` or `None` |
 | `class_shift` | `True` | each member shifts the class codes by its own offset |
@@ -100,26 +99,12 @@ class MyRecipe(SeldonRecipe):
 clf = SeldonClassifier.from_pretrained("seldon-mini", recipe=MyRecipe())
 ```
 
-Members can take different recipes: a list of recipes, each with the
-`members` it preprocesses, which together cover every member once. Each group
-runs as its own ensemble, and the groups' outputs are averaged in log space,
-weighted by their sizes:
-
-```python
-recipes = [
-    SeldonRecipe(members=[0, 1, 2, 3], shuffle_categories=False),
-    SeldonRecipe(members=[4, 5, 6, 7], shuffle_categories=True),
-]
-clf = SeldonClassifier.from_pretrained("seldon-mini", n_estimators=8, recipe=recipes)
-```
-
 ### Configs
 
 For full control over a run, beyond `from_pretrained`'s defaults, a YAML
 config sets the checkpoint, the classifier and its recipe in one file:
 `checkpoint`, any keyword argument of `from_pretrained`, and `recipe`,
-`SeldonRecipe`'s keyword arguments, or a list of them, one per group of
-members. Each released model's settings are a packaged config of its name,
+`SeldonRecipe`'s keyword arguments. Each released model's settings are a packaged config of its name,
 which `from_pretrained` loads: `seldon` and `seldon-mini`.
 
 ```yaml
@@ -130,10 +115,7 @@ max_context_size: 200000
 random_state: 0
 amp: true
 recipe:
-  - members: [0, 1, 2, 3]
-    shuffle_categories: false
-  - members: [4, 5, 6, 7]
-    shuffle_categories: true
+  half_shuffle: true
 ```
 
 ```python
@@ -147,8 +129,7 @@ clf = SeldonClassifier.from_config(
 them, lists every argument a config can set, at its default, with what
 it does: copy it and keep the keys you change. Keys a config leaves out take
 the model's own settings for `seldon` and `seldon-mini`, the constructor's
-defaults otherwise. To change `n_estimators` of a model whose config splits
-its members into groups, set `recipe` too, so that its members match.
+defaults otherwise.
 
 ### The model alone
 

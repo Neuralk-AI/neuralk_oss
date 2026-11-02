@@ -136,7 +136,6 @@ def recipe_two_transforms(rng):
     X, y, _ = multiclass_mixed(rng)
     recipe = SeldonRecipe(
         transforms=("identity", "rank_gaussian"),
-        shuffle_categories=False,
         feature_shuffle="random",
         softmax_temperature=0.8,
     )
@@ -149,7 +148,6 @@ def recipe_single_view(rng):
     X, y, _ = multiclass_mixed(rng)
     recipe = SeldonRecipe(
         transforms=("robust",),
-        shuffle_categories=False,
         flip_sign=False,
         feature_shuffle=None,
         class_shift=False,
@@ -158,19 +156,10 @@ def recipe_single_view(rng):
     return X, y, {"recipe": recipe}
 
 
-def shuffled_categories(rng):
+def half_shuffle(rng):
+    # Members 0 and 1 read sorted categories, member 2 shuffled ones.
     X, y, _ = multiclass_mixed(rng)
-    return X, y, {"recipe": SeldonRecipe(shuffle_categories=True)}
-
-
-def recipe_groups(rng):
-    # Member 0 reads sorted categories, members 1 and 2 shuffled ones.
-    X, y, _ = multiclass_mixed(rng)
-    recipes = [
-        SeldonRecipe(members=[0], shuffle_categories=False),
-        SeldonRecipe(members=[1, 2], shuffle_categories=True),
-    ]
-    return X, y, {"recipe": recipes}
+    return X, y, {"recipe": SeldonRecipe(half_shuffle=True)}
 
 
 CLASSIFIER_CASES = [
@@ -186,8 +175,7 @@ CLASSIFIER_CASES = [
     variant_checkpoint,
     recipe_two_transforms,
     recipe_single_view,
-    shuffled_categories,
-    recipe_groups,
+    half_shuffle,
 ]
 
 

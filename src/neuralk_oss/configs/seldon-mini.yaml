@@ -1,12 +1,9 @@
 # Seldon-Mini with 4 members: members 0-1 read categorical codes sorted by value,
-# members 2-3 in a random order per column.
+# members 2-3 in a random order per column (half_shuffle).
 checkpoint: seldon-mini
 n_estimators: 4
 max_context_size: 200000
 random_state: 0
 amp: true
-recipe:  # SeldonRecipe's keyword arguments, one recipe per group of members
-  - members: [0, 1]
-    shuffle_categories: false
-  - members: [2, 3]
-    shuffle_categories: true
+recipe:  # SeldonRecipe's keyword arguments
+  half_shuffle: true
