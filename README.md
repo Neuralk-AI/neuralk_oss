@@ -112,7 +112,9 @@ recipe:
 
 ```python
 clf = SeldonClassifier.from_config("seldon-mini")
-clf = SeldonClassifier.from_config("my_run.yaml", device="cpu")  # keyword arguments override the file
+clf = SeldonClassifier.from_config(
+    "my_run.yaml", device="cpu"
+)  # keyword arguments override the file
 ```
 
 ### The model alone

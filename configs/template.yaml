@@ -1,0 +1,40 @@
+# Every argument a config can set, at its default. Copy this file, keep the
+# keys you change, and load it with SeldonClassifier.from_config("path.yaml").
+# Keyword arguments of from_config override the file's keys.
+
+# --- The checkpoint (SeldonClassifier.from_pretrained) ---
+# A checkpoint name, a local directory or a Hugging Face repository.
+checkpoint: seldon-small-classifier
+subfolder: null          # the checkpoint's directory, for a repository of your own
+revision: null           # a branch, tag or commit of the repository
+token: null              # prefer `hf auth login`: never commit a token
+
+# --- The classifier (SeldonClassifier) ---
+n_estimators: 8          # ensemble members
+device: null             # cuda when available, else cpu
+max_context_size: 200000 # training rows one member reads; more: each member its own random subset
+amp: true                # float16 autocast on CUDA
+random_state: 0          # seed of the context subsets and of the preprocessing
+cudnn_attention: false   # cuDNN attention: faster once a shape has run, seconds per new shape
+query_chunk_size: 8192   # test rows through the model together, per member
+estimator_batch_size: auto  # members through the model together: an int, auto, or null for all
+
+# --- The preprocessing (SeldonRecipe) ---
+recipe:
+  # Numerical transforms the members take in turn, one each: identity, power
+  # (Yeo-Johnson), robust (quartile scaling, soft-clipped to +-3), rank_gaussian.
+  transforms: [identity, power, robust, rank_gaussian]
+  # Members in blocks of len(transforms) alternate between categorical codes
+  # sorted by value and a random permutation per column.
+  shuffle_categories: true
+  flip_sign: true          # each member negates a random half of its numerical columns
+  feature_shuffle: latin   # column permutation per member: latin, random, or null for none
+  class_shift: true        # each member shifts the class codes by its own offset
+  average_logits: true     # average the members' logits, else their probabilities
+  softmax_temperature: 1.0 # divisor of the logits before the softmax
+  max_features: 500        # columns the model reads, cut after the shuffle
+  standardize_eps: 1.0e-6  # epsilon of the per-column standardization
+  clip_value: 100.0        # bound of the standardized values, before the transform
+  rank_gaussian_knots: 8192
+  clip_sigma: 4.0          # bound, in standard deviations, after the transform
+  category_count_min_cardinality: 50  # categories from which a column gains its category counts

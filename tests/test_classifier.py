@@ -1,11 +1,13 @@
 # Copyright (c) 2026 Neuralk-AI
 # SPDX-License-Identifier: Apache-2.0
 
+import inspect
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
 
 from neuralk_oss import SeldonClassifier, SeldonRecipe
 from neuralk_oss.inference.classifier import MEMBER_BATCH_CELLS, member_batch_size
@@ -188,3 +190,22 @@ def test_config_file(tmp_path):
         SeldonClassifier.from_config(path)
     with pytest.raises(ValueError, match="seldon-mini"):
         SeldonClassifier.from_config("seldon-maxi")
+
+
+def test_template_config_lists_every_argument_at_its_default():
+    path = Path(__file__).parents[1] / "configs" / "template.yaml"
+    config = yaml.safe_load(path.read_text())
+    arguments = {
+        *inspect.signature(SeldonClassifier.__init__).parameters,
+        *inspect.signature(SeldonClassifier.from_pretrained).parameters,
+    } - {"self", "model", "name_or_path", "kwargs", "recipe"}
+    assert set(config) - {"recipe", "checkpoint"} == arguments
+    recipe = SeldonRecipe(**config["recipe"])
+    defaults = {n for n in vars(SeldonRecipe) if not n.startswith("_")}
+    assert set(config["recipe"]) == {n for n in defaults if not callable(getattr(SeldonRecipe, n))}
+    assert repr(recipe.build()) == repr(SeldonRecipe().build())
+    clf = SeldonClassifier.from_config(path, checkpoint=TINY, device="cpu")
+    default = SeldonClassifier.from_pretrained(TINY, device="cpu")
+    assert {k: v for k, v in vars(clf).items() if k != "estimator"} == {
+        k: v for k, v in vars(default).items() if k != "estimator"
+    }
