@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
+from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
@@ -19,6 +20,7 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 from neuralk_oss.inference.estimator import SeldonICL
 from neuralk_oss.inference.recipe import SeldonRecipe
 from neuralk_oss.model import Seldon
+from neuralk_oss.model.seldon import HUB_CHECKPOINTS
 
 _TARGET = "target"
 # Every attention kernel PyTorch has but cuDNN's (see ``cudnn_attention``).
@@ -112,7 +114,11 @@ class SeldonClassifier:
         token: str | None = None,
         **kwargs: Any,
     ) -> SeldonClassifier:
-        """The classifier of a saved model: a local directory, a checkpoint name such as ``"seldon-small-classifier"``, or a Hub repository (see ``Seldon.from_pretrained``); ``kwargs`` are the constructor's."""
+        """The classifier of a saved model: a released model's name, ``"seldon"`` or ``"seldon-small"``, or what ``Seldon.from_pretrained`` takes (a local directory, a checkpoint name such as ``"seldon-small-classifier"``, a Hub repository); ``kwargs`` are the constructor's."""
+        # A model name is its classification checkpoint; a local directory of that name wins.
+        checkpoint = f"{name_or_path}-classifier"
+        if subfolder is None and checkpoint in HUB_CHECKPOINTS and not Path(name_or_path).is_dir():
+            name_or_path = checkpoint
         model = Seldon.from_pretrained(
             name_or_path, subfolder=subfolder, revision=revision, token=token
         )

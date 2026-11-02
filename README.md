@@ -13,23 +13,27 @@ one forward pass, with no gradient step.
 ```python
 from neuralk_oss import SeldonClassifier
 
-clf = SeldonClassifier.from_pretrained("seldon-small-classifier")
+clf = SeldonClassifier.from_pretrained("seldon-small")  # or "seldon"
 clf.fit(X_train, y_train)  # pandas DataFrame (or array) and labels
 proba = clf.predict_proba(X_test)  # (n_rows, n_classes), columns in clf.classes_ order
 ```
 
 ### Checkpoints
 
-| name | task | parameters |
-| --- | --- | --- |
-| `seldon-classifier` | classification, up to 10 classes per model call | 213.5M |
-| `seldon-small-classifier` | classification, up to 10 classes per model call | 27.4M |
+| model | checkpoint | task | parameters |
+| --- | --- | --- | --- |
+| `seldon` | `seldon-classifier` | classification, up to 10 classes per model call | 213.5M |
+| `seldon-small` | `seldon-small-classifier` | classification, up to 10 classes per model call | 27.4M |
+
+`SeldonClassifier.from_pretrained` takes the model name and loads its
+classification checkpoint; `Seldon.from_pretrained` takes the checkpoint name.
 
 A checkpoint is a directory holding `config.json` and `model.safetensors`.
 `from_pretrained` takes:
 
-- a checkpoint name of the table above: downloaded from its Hugging Face
-  repository, [`Neuralk-AI/seldon`](https://huggingface.co/Neuralk-AI/seldon) or
+- a checkpoint name of the table above (or, for `SeldonClassifier`, a model
+  name): downloaded from its Hugging Face repository,
+  [`Neuralk-AI/seldon`](https://huggingface.co/Neuralk-AI/seldon) or
   [`Neuralk-AI/seldon-small`](https://huggingface.co/Neuralk-AI/seldon-small),
   where the checkpoint is a directory of that name, on the first call, then
   read from the Hugging Face cache (`~/.cache/huggingface`, or `HF_HOME`);
@@ -65,7 +69,7 @@ class MyRecipe(SeldonRecipe):
         return [sp.Identity(), sp.RankGaussian(max_knots=self.rank_gaussian_knots)]
 
 
-clf = SeldonClassifier.from_pretrained("seldon-small-classifier", recipe=MyRecipe())
+clf = SeldonClassifier.from_pretrained("seldon-small", recipe=MyRecipe())
 ```
 
 ### The model alone
