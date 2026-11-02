@@ -135,8 +135,9 @@ clf = SeldonClassifier.from_config(
 )  # keyword arguments override the file
 ```
 
-[`configs/template.yaml`](configs/template.yaml) lists every argument a config
-can set, at its default, with what it does: copy it and keep the keys you change.
+[`template.yaml`](src/neuralk_oss/configs/template.yaml), packaged next to
+`seldon-mini`, lists every argument a config can set, at its default, with what
+it does: copy it and keep the keys you change.
 
 ### The model alone
 

@@ -181,7 +181,7 @@ def test_config_file(tmp_path):
 
 
 def test_template_config_lists_every_argument_at_its_default():
-    path = Path(__file__).parents[1] / "configs" / "template.yaml"
+    path = Path(__file__).parents[1] / "src" / "neuralk_oss" / "configs" / "template.yaml"
     config = yaml.safe_load(path.read_text())
     arguments = {
         *inspect.signature(SeldonClassifier.__init__).parameters,
