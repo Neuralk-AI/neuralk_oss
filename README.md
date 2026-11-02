@@ -67,7 +67,7 @@ clf = SeldonClassifier.from_pretrained("seldon-mini", recipe=recipe)
 | parameter | default | |
 | --- | --- | --- |
 | `transforms` | `("identity", "power", "robust", "rank_gaussian")` | numerical transforms the members take in turn, one each |
-| `shuffle_categories` | `True` | half the members read categorical codes in a random order, per column; members in blocks of `len(transforms)`, so it needs more members than that. `"all"`: every member |
+| `shuffle_categories` | `False` | the members read categorical codes in a random order per column, instead of sorted; for some members only, see below |
 | `members` | `"all"` | the members this recipe preprocesses: see below |
 | `flip_sign` | `True` | each member negates a random half of its numerical columns |
 | `feature_shuffle` | `"latin"` | column permutation per member: `"latin"`, `"random"` or `None` |
@@ -102,7 +102,7 @@ weighted by their sizes:
 ```python
 recipes = [
     SeldonRecipe(members=[0, 1, 2, 3], shuffle_categories=False),
-    SeldonRecipe(members=[4, 5, 6, 7], shuffle_categories="all"),
+    SeldonRecipe(members=[4, 5, 6, 7], shuffle_categories=True),
 ]
 clf = SeldonClassifier.from_pretrained("seldon-small-classifier", n_estimators=8, recipe=recipes)
 ```
@@ -111,8 +111,9 @@ clf = SeldonClassifier.from_pretrained("seldon-small-classifier", n_estimators=8
 
 A YAML config sets a classifier and its recipe in one file: `checkpoint`,
 any keyword argument of `from_pretrained`, and `recipe`, `SeldonRecipe`'s
-keyword arguments. `seldon-mini` is packaged, the setup neuralk_model
-evaluates as `seldon_mini`, and the defaults:
+keyword arguments, or a list of them, one per group of members. `seldon-mini`
+is packaged, the setup neuralk_model evaluates as `seldon_mini`, half the
+members shuffling categories:
 
 ```yaml
 checkpoint: seldon-mini
@@ -121,7 +122,10 @@ max_context_size: 200000
 random_state: 0
 amp: true
 recipe:
-  shuffle_categories: true
+  - members: [0, 1, 2, 3]
+    shuffle_categories: false
+  - members: [4, 5, 6, 7]
+    shuffle_categories: true
 ```
 
 ```python

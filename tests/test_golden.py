@@ -160,9 +160,7 @@ def recipe_single_view(rng):
 
 def shuffled_categories(rng):
     X, y, _ = multiclass_mixed(rng)
-    # Blocks of 2 members, so the third of the golden tests' 3 shuffles.
-    recipe = SeldonRecipe(transforms=("identity", "power"))
-    return X, y, {"recipe": recipe}
+    return X, y, {"recipe": SeldonRecipe(shuffle_categories=True)}
 
 
 def recipe_groups(rng):
@@ -170,7 +168,7 @@ def recipe_groups(rng):
     X, y, _ = multiclass_mixed(rng)
     recipes = [
         SeldonRecipe(members=[0], shuffle_categories=False),
-        SeldonRecipe(members=[1, 2], shuffle_categories="all"),
+        SeldonRecipe(members=[1, 2], shuffle_categories=True),
     ]
     return X, y, {"recipe": recipes}
 

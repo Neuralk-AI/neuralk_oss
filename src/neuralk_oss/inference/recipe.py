@@ -27,7 +27,6 @@ from typing import Any, Literal
 
 import sdm.processing as sp
 import torch
-from sdm import EnsembleTable
 
 
 class SeldonRecipe:
@@ -61,12 +60,11 @@ class SeldonRecipe:
     members : "all" or list of int
         The ensemble members this recipe preprocesses: all of them, or, with
         several recipes handed to the classifier, these indices.
-    shuffle_categories : bool or "all"
-        Whether half the members (all of them, with ``"all"``) read each categorical column with its codes
-        in a random order, one permutation per column, instead of sorted by
-        value: members in blocks of ``len(transforms)``, sorted then shuffled,
-        so each view of the numbers meets both orders. With
-        ``n_estimators`` up to ``len(transforms)``, no member shuffles.
+    shuffle_categories : bool
+        Whether the members read each categorical column with its codes in a
+        random order, one permutation per column, instead of sorted by value.
+        To shuffle only some members, give them a recipe of their own (see
+        ``members``).
     flip_sign : bool
         Whether each member negates a random half of its numerical columns.
     feature_shuffle : {"latin", "random"} or None
@@ -89,7 +87,7 @@ class SeldonRecipe:
     category_count_min_cardinality = 50
     transforms: tuple[str, ...] = ("identity", "power", "robust", "rank_gaussian")
     members: Literal["all"] | list[int] = "all"
-    shuffle_categories: bool | Literal["all"] = True
+    shuffle_categories = False
     flip_sign = True
     feature_shuffle: Literal["latin", "random"] | None = "latin"
     class_shift = True
@@ -110,10 +108,6 @@ class SeldonRecipe:
         ):
             raise ValueError(
                 f"members must be 'all' or a list of member indices, got {self.members!r}"
-            )
-        if self.shuffle_categories not in (True, False, "all"):
-            raise ValueError(
-                f"shuffle_categories must be true, false or 'all', got {self.shuffle_categories!r}"
             )
         if not self.transforms or unknown:
             raise ValueError(
@@ -142,22 +136,14 @@ class SeldonRecipe:
         return [self.numerical_processor(), *([sp.FlipSign()] if self.flip_sign else [])]
 
     def categorical_features(self) -> list[sp.Processor]:
-        """The steps of a categorical column: its codes (shuffled in some members), with their counts for a large vocabulary, read as numbers."""
+        """The steps of a categorical column: its codes (shuffled or not), with their counts for a large vocabulary, read as numbers."""
         return [
             sp.AlignCategories(sort_by="value"),
-            *self._category_shuffle(),
+            *([sp.ShuffleCategories(method="random")] if self.shuffle_categories else []),
             sp.AddCategoryCounts(min_cardinality=self.category_count_min_cardinality),
             sp.ToNumerical(),
             self.numerical_processor(),
         ]
-
-    def _category_shuffle(self) -> list[sp.Processor]:
-        shuffle = sp.ShuffleCategories(method="random")
-        if self.shuffle_categories == "all":
-            return [shuffle]
-        if self.shuffle_categories:
-            return [_BlockChoice(sp.Identity(), shuffle, block=len(self.transforms))]
-        return []
 
     def numerical_processor(self) -> sp.Sequential:
         """The scaling of a column of numbers: standardized and clipped, transformed, then clipped in standard deviations."""
@@ -194,20 +180,6 @@ class SeldonRecipe:
         return sp.TaskDispatch(
             classification=classification if self.average_logits else classification[::-1],
             regression=[sp.SortQuantiles(), sp.AverageEstimators(trim_fraction=0.2)],
-        )
-
-
-class _BlockChoice(sp.Choice):
-    """A choice by blocks of members: the first ``block`` take option 0, the next option 1, and so on, cycling."""
-
-    def __init__(self, *options: object, block: int) -> None:
-        super().__init__(*options, method="round_robin")
-        self.block = block
-
-    # shortcut: overrides sdm's private hook, pinned at 0.2.1; recheck on an sdm upgrade.
-    def _draw_option_ids(self, ensemble_table: EnsembleTable, **kwargs: Any) -> tuple[int, ...]:
-        return tuple(
-            (member // self.block) % len(self.options) for member in range(len(ensemble_table))
         )
 
 
