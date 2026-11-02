@@ -85,7 +85,7 @@ class SeldonRecipe:
     clip_sigma = 4.0
     category_count_min_cardinality = 50
     transforms: tuple[str, ...] = ("identity", "power", "robust", "rank_gaussian")
-    shuffle_categories = False
+    shuffle_categories = True
     flip_sign = True
     feature_shuffle: Literal["latin", "random"] | None = "latin"
     class_shift = True

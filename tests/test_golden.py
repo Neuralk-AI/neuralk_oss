@@ -135,17 +135,21 @@ def variant_checkpoint(rng):
 def recipe_two_transforms(rng):
     X, y, _ = multiclass_mixed(rng)
     recipe = SeldonRecipe(
-        transforms=("identity", "rank_gaussian"), feature_shuffle="random", softmax_temperature=0.8
+        transforms=("identity", "rank_gaussian"),
+        shuffle_categories=False,
+        feature_shuffle="random",
+        softmax_temperature=0.8,
     )
     return X, y, {"recipe": recipe}
 
 
 def recipe_single_view(rng):
-    # One transform, no sign flip, column shuffle or class shift: the members
-    # are identical, and their probabilities are averaged.
+    # One transform, no category or column shuffle, sign flip or class shift:
+    # the members are identical, and their probabilities are averaged.
     X, y, _ = multiclass_mixed(rng)
     recipe = SeldonRecipe(
         transforms=("robust",),
+        shuffle_categories=False,
         flip_sign=False,
         feature_shuffle=None,
         class_shift=False,
@@ -157,7 +161,7 @@ def recipe_single_view(rng):
 def shuffled_categories(rng):
     X, y, _ = multiclass_mixed(rng)
     # Blocks of 2 members, so the third of the golden tests' 3 shuffles.
-    recipe = SeldonRecipe(shuffle_categories=True, transforms=("identity", "power"))
+    recipe = SeldonRecipe(transforms=("identity", "power"))
     return X, y, {"recipe": recipe}
 
 

@@ -85,7 +85,7 @@ def test_recipe_override(tiny_model):
     [
         {"max_features": 2},
         {"transforms": ("identity", "rank_gaussian")},
-        {"shuffle_categories": True},
+        {"shuffle_categories": False},
         {"flip_sign": False},
         {"feature_shuffle": "random"},
         {"feature_shuffle": None},
