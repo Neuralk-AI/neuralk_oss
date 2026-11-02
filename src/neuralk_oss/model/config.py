@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Neuralk-AI
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """Seldon's architecture, validated once from a checkpoint's ``config.json``.
 

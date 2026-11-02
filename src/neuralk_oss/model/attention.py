@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Neuralk-AI
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """Seldon's attention: the multi-head attention, the pre-norm block, and the column stage's induced block.
 

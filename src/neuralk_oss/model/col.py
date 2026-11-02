@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Neuralk-AI
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """The column stage: the cell and label embeddings, and the layers' column blocks."""
 

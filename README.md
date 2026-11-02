@@ -79,3 +79,7 @@ logits = model.predict_query(X_query, context, categorical_mask)  # (B, T_query,
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md): layout, development and versions.
+
+## License
+
+[Apache 2.0](LICENSE).

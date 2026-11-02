@@ -7,7 +7,7 @@ name = "neuralk-oss"
 version = "0.1.1"
 description = "Neuralk-AI open-source models: loading and inference"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Neuralk-AI" }]
 requires-python = ">=3.11"

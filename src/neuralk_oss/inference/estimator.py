@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Neuralk-AI
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """Seldon as an sdm in-context model: sdm's preprocessing, ensembling, context cache and error-correcting output codes around ``Seldon``."""
 

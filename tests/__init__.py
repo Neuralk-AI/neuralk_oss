@@ -1,3 +1,3 @@
 # Copyright (c) 2026 Neuralk-AI
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 

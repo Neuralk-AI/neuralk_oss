@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Neuralk-AI
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """Golden tests: outputs of the committed tiny checkpoints on fixed tables, against saved references.
 

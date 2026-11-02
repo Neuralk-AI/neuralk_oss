@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Neuralk-AI
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """Seldon's preprocessing: what sdm does to a table before the model reads it, and to the model's outputs.
 

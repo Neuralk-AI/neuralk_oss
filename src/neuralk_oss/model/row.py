@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Neuralk-AI
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 """The row stage: the readout tokens, the row blocks, and the projection of the readout to the ICL width."""
 
