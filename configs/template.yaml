@@ -18,7 +18,11 @@ amp: true                # float16 autocast on CUDA
 random_state: 0          # seed of the context subsets and of the preprocessing
 cudnn_attention: false   # cuDNN attention: faster once a shape has run, seconds per new shape
 query_chunk_size: 8192   # test rows through the model together, per member
-estimator_batch_size: auto  # members through the model together: an int, auto, or null for all
+# Members through the model together: an int, null for all at once, or auto:
+# together up to 400k context cells (rows x features) per batch, so a batch
+# needs about the memory of one member on a 400k-cell table, whatever the GPU;
+# larger members run one at a time. The threshold was measured on an H100.
+estimator_batch_size: auto
 
 # --- The preprocessing (SeldonRecipe) ---
 recipe:
