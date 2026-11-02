@@ -82,14 +82,15 @@ def test_from_pretrained_hub_names(tiny_model, tmp_path, monkeypatch):
         return str(tmp_path / "hub")
 
     monkeypatch.setattr(seldon, "snapshot_download", fake_download)
+    monkeypatch.setitem(seldon.HUB_CHECKPOINTS, "seldon-tiny-classifier", "org/tiny")
     monkeypatch.chdir(tmp_path)
-    # A bare name is a checkpoint of the default repository.
+    # A checkpoint name downloads from its own repository.
     Seldon.from_pretrained("seldon-tiny-classifier")
     # A repository id, with the checkpoint's subfolder and a revision.
     Seldon.from_pretrained("org/repo", subfolder="seldon-tiny-classifier", revision="v1")
     assert calls == [
         (
-            seldon.HUB_REPO,
+            "org/tiny",
             None,
             ["seldon-tiny-classifier/config.json", "seldon-tiny-classifier/model.safetensors"],
         ),
@@ -102,5 +103,16 @@ def test_from_pretrained_hub_names(tiny_model, tmp_path, monkeypatch):
     # A local directory is read in place.
     Seldon.from_pretrained(tmp_path / "hub", subfolder="seldon-tiny-classifier")
     assert len(calls) == 2
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ValueError, match="seldon-classifier, seldon-mini-classifier"):
         Seldon.from_pretrained("seldon-missing-classifier")
+    with pytest.raises(FileNotFoundError):
+        Seldon.from_pretrained("org/repo", subfolder="seldon-missing-classifier")
+
+
+def test_hub_checkpoints():
+    from neuralk_oss.model.seldon import HUB_CHECKPOINTS
+
+    assert HUB_CHECKPOINTS == {
+        "seldon-classifier": "Neuralk-AI/seldon",
+        "seldon-mini-classifier": "Neuralk-AI/seldon-mini",
+    }

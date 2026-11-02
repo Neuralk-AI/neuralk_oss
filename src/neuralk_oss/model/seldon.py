@@ -40,8 +40,12 @@ from neuralk_oss.model.row import RowInteraction
 
 CONFIG_NAME = "config.json"
 WEIGHTS_NAME = "model.safetensors"
-# The Hugging Face repository of the released checkpoints, one directory each.
-HUB_REPO = "Neuralk-AI/seldon"
+# The released checkpoints by name: the Hugging Face repository holding each,
+# as a directory of that name.
+HUB_CHECKPOINTS = {
+    "seldon-classifier": "Neuralk-AI/seldon",
+    "seldon-mini-classifier": "Neuralk-AI/seldon-mini",
+}
 
 
 class Context(TypedDict):
@@ -219,8 +223,9 @@ class Seldon(nn.Module):
         Parameters
         ----------
         name_or_path : str or PathLike
-            A local directory; else a checkpoint name of ``HUB_REPO``, such as
-            ``"seldon-small-classifier"``; else a Hugging Face repository id
+            A local directory; else a checkpoint name of ``HUB_CHECKPOINTS``,
+            ``"seldon-classifier"`` or ``"seldon-mini-classifier"``; else a
+            Hugging Face repository id
             (``"org/repo"``). A checkpoint on the Hub is downloaded once into
             the Hugging Face cache.
         subfolder : str, optional
@@ -267,7 +272,7 @@ def resolve_checkpoint(
 ) -> Path:
     """The local directory of a checkpoint, downloaded from the Hub when ``name_or_path`` is not a local directory.
 
-    A name without ``/`` is a checkpoint of ``HUB_REPO``: its ``subfolder``.
+    A name without ``/`` is a checkpoint of ``HUB_CHECKPOINTS``: its repository's ``subfolder``.
     """
     local = Path(name_or_path) / (subfolder or "")
     if local.is_dir():
@@ -275,10 +280,13 @@ def resolve_checkpoint(
     name = str(name_or_path)
     if "/" in name:
         repo_id = name
-    elif subfolder is None:
-        repo_id, subfolder = HUB_REPO, name
+    elif subfolder is None and name in HUB_CHECKPOINTS:
+        repo_id, subfolder = HUB_CHECKPOINTS[name], name
     else:
-        raise ValueError(f"{name!r} is neither a local directory nor a Hugging Face repository id")
+        raise ValueError(
+            f"{name!r} is neither a local directory, a checkpoint name ({', '.join(HUB_CHECKPOINTS)}) "
+            "nor a Hugging Face repository id"
+        )
     prefix = f"{subfolder}/" if subfolder else ""
     root = snapshot_download(
         repo_id,

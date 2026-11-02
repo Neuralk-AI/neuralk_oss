@@ -86,3 +86,25 @@ def test_numpy_input(tiny_model):
     assert clf.fit(X[list("abcd")].to_numpy()[:40], y[:40].to_numpy()).predict_proba(
         X[list("abcd")].to_numpy()[40:]
     ).shape == (10, 2)
+
+
+def test_from_pretrained_model_names(tiny_model, tmp_path, monkeypatch):
+    from neuralk_oss.model import Seldon
+
+    loaded = []
+    monkeypatch.setattr(
+        Seldon, "from_pretrained", lambda name, **_: loaded.append(str(name)) or tiny_model
+    )
+    for name in ["seldon", "seldon-mini", "seldon-mini-classifier", "org/repo"]:
+        SeldonClassifier.from_pretrained(name)
+    # A local directory named like a model is read as such.
+    (tmp_path / "seldon").mkdir()
+    monkeypatch.chdir(tmp_path)
+    SeldonClassifier.from_pretrained("seldon")
+    assert loaded == [
+        "seldon-classifier",
+        "seldon-mini-classifier",
+        "seldon-mini-classifier",
+        "org/repo",
+        "seldon",
+    ]
