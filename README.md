@@ -104,7 +104,7 @@ recipes = [
     SeldonRecipe(members=[0, 1, 2, 3], shuffle_categories=False),
     SeldonRecipe(members=[4, 5, 6, 7], shuffle_categories=True),
 ]
-clf = SeldonClassifier.from_pretrained("seldon-small-classifier", n_estimators=8, recipe=recipes)
+clf = SeldonClassifier.from_pretrained("seldon-mini", n_estimators=8, recipe=recipes)
 ```
 
 ### Configs
