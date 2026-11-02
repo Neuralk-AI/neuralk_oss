@@ -165,6 +165,16 @@ def shuffled_categories(rng):
     return X, y, {"recipe": recipe}
 
 
+def recipe_groups(rng):
+    # Member 0 reads sorted categories, members 1 and 2 shuffled ones.
+    X, y, _ = multiclass_mixed(rng)
+    recipes = [
+        SeldonRecipe(members=[0], shuffle_categories=False),
+        SeldonRecipe(members=[1, 2], shuffle_categories="all"),
+    ]
+    return X, y, {"recipe": recipes}
+
+
 CLASSIFIER_CASES = [
     binary_numerical,
     multiclass_mixed,
@@ -179,6 +189,7 @@ CLASSIFIER_CASES = [
     recipe_two_transforms,
     recipe_single_view,
     shuffled_categories,
+    recipe_groups,
 ]
 
 

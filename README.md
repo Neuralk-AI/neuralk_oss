@@ -67,7 +67,8 @@ clf = SeldonClassifier.from_pretrained("seldon-mini", recipe=recipe)
 | parameter | default | |
 | --- | --- | --- |
 | `transforms` | `("identity", "power", "robust", "rank_gaussian")` | numerical transforms the members take in turn, one each |
-| `shuffle_categories` | `True` | half the members read categorical codes in a random order, per column; members in blocks of `len(transforms)`, so it needs more members than that |
+| `shuffle_categories` | `True` | half the members read categorical codes in a random order, per column; members in blocks of `len(transforms)`, so it needs more members than that. `"all"`: every member |
+| `members` | `"all"` | the members this recipe preprocesses: see below |
 | `flip_sign` | `True` | each member negates a random half of its numerical columns |
 | `feature_shuffle` | `"latin"` | column permutation per member: `"latin"`, `"random"` or `None` |
 | `class_shift` | `True` | each member shifts the class codes by its own offset |
@@ -91,6 +92,19 @@ class MyRecipe(SeldonRecipe):
 
 
 clf = SeldonClassifier.from_pretrained("seldon-mini", recipe=MyRecipe())
+```
+
+Members can take different recipes: a list of recipes, each with the
+`members` it preprocesses, which together cover every member once. Each group
+runs as its own ensemble, and the groups' outputs are averaged in log space,
+weighted by their sizes:
+
+```python
+recipes = [
+    SeldonRecipe(members=[0, 1, 2, 3], shuffle_categories=False),
+    SeldonRecipe(members=[4, 5, 6, 7], shuffle_categories="all"),
+]
+clf = SeldonClassifier.from_pretrained("seldon-small-classifier", n_estimators=8, recipe=recipes)
 ```
 
 ### Configs
