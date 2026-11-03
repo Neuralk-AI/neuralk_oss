@@ -218,10 +218,13 @@ class Seldon(nn.Module):
         """The row representations ``(B, T, icl_width)`` of the query rows ``X``, through the column and row stages."""
         col, row = self.col_embedder, self.row_interactor
         state = row.state(col.embed(X, context["mean"], categorical_mask))
-        for i, (block, summary) in enumerate(
-            zip(col.tf_col.blocks, context["induced"], strict=True)
-        ):
-            state = self._after_column_block(i, state, block.expand(self._cells(state), summary))
+        blocks = col.tf_col.blocks
+        for i, (block, summary) in enumerate(zip(blocks, context["induced"], strict=True)):
+            # In place, as encode_context: the column block's output keeps the state's dtype.
+            cells = self._cells(state)
+            cells[:] = block.expand(cells, summary)
+            if i < len(blocks) - 1:
+                state = row.block(i, state)
         return row(state)
 
     def forward(
@@ -249,14 +252,6 @@ class Seldon(nn.Module):
     def _cells(self, state: Tensor) -> Tensor:
         """The cells of the state ``(B, T, K+H, E)``, per column: ``(B, H, T, E)``."""
         return state[:, :, self.row_interactor.num_cls :].transpose(1, 2)
-
-    def _after_column_block(self, i: int, state: Tensor, cols: Tensor) -> Tensor:
-        """The state after layer ``i``'s column block, whose output is ``cols`` ``(B, H, T, E)``, and its row block but the last."""
-        readout = state[:, :, : self.row_interactor.num_cls]
-        state = torch.cat([readout.to(cols.dtype), cols.transpose(1, 2)], dim=2)
-        if i < len(self.col_embedder.tf_col.blocks) - 1:
-            state = self.row_interactor.block(i, state)
-        return state
 
     @classmethod
     def from_pretrained(
