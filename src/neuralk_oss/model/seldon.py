@@ -131,20 +131,23 @@ class Seldon(nn.Module):
         col.check_classes(y)
         categorical_mask = self._categorical_mask(X, categorical_mask)
         B, T, H = X.shape
-        embed_step, col_step, row_step = self._context_steps(X)
-        mean = col.context_mean(X)
+        device = X.device.type
+        dtype = (
+            torch.get_autocast_dtype(device)
+            if torch.is_autocast_enabled(device)
+            else col.num_lin.weight.dtype
+        )
         # One state, each stage written into it in place, a slice at a time: a
         # slice's output keeps the state's dtype, and reads only its own rows (or columns).
-        state = None
+        # Allocated first, so that the slices are sized to the memory left beside it.
+        state = X.new_empty((B, T, row.num_cls + H, self.config.embed_dim), dtype=dtype)
+        embed_step, col_step, row_step = self._context_steps(X)
+        mean = col.context_mean(X)
         for t in range(0, max(T, 1), embed_step):
             cells = col.embed(
                 X[:, t : t + embed_step], mean, categorical_mask, y[:, t : t + embed_step]
             )
-            chunk = row.state(cells)
-            if state is None:
-                state = chunk.new_empty((B, T, *chunk.shape[2:]))
-            state[:, t : t + embed_step] = chunk
-        assert state is not None
+            state[:, t : t + embed_step] = row.state(cells)
         induced = []
         blocks = col.tf_col.blocks
         for i, block in enumerate(blocks):
@@ -170,8 +173,8 @@ class Seldon(nn.Module):
         """Rows per slice of the cell embedding, columns per slice of a column block, rows per slice of a row block, for the context ``X`` ``(B, T, H)``.
 
         As sdm slices Kumo Tabular's stages: each slice within sdm's chunk
-        memory limit (a share of the GPU), by the same per-item estimates;
-        everything at once off CUDA.
+        memory limit (a share of the GPU), by the same per-item estimates, and
+        within the memory still free; everything at once off CUDA.
         """
         B, T, H = X.shape
         E, K = self.config.embed_dim, self.row_interactor.num_cls
@@ -187,9 +190,9 @@ class Seldon(nn.Module):
         # shortcut: sdm's private sizing (sdm._memory), pinned at 0.2.1; recheck on an sdm upgrade.
         factor = 15 if size <= 2 else 8
         return (
-            split_size(T, B * H * cell, X.device),
-            split_size(H, B * factor * T * size * E, X.device),
-            split_size(T, B * factor * (K + H) * size * E, X.device),
+            _split(T, B * H * cell, X.device),
+            _split(H, B * factor * T * size * E, X.device),
+            _split(T, B * factor * (K + H) * size * E, X.device),
         )
 
     def predict_query(
@@ -308,6 +311,19 @@ class Seldon(nn.Module):
         (path / CONFIG_NAME).write_text(json.dumps(config, indent=2) + "\n")
         state = {key: value.detach().contiguous() for key, value in self.state_dict().items()}
         save_file(state, path / WEIGHTS_NAME, metadata={"format": "pt"})
+
+
+def _split(num_items: int, item_bytes: int, device: torch.device) -> int:
+    """sdm's ``split_size``, in balanced chunks that also fit the memory free on a CUDA device, the allocator's cache included."""
+    step = split_size(num_items, item_bytes, device)
+    if device.type != "cuda" or torch.is_grad_enabled() or item_bytes == 0:
+        return step
+    free = torch.cuda.mem_get_info(device)[0]
+    free += torch.cuda.memory_reserved(device) - torch.cuda.memory_allocated(device)
+    if step * item_bytes <= free:
+        return step
+    chunks = -(-num_items // max(free // item_bytes, 1))
+    return -(-num_items // chunks)
 
 
 def resolve_checkpoint(

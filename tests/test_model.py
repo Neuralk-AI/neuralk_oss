@@ -124,3 +124,16 @@ def test_context_chunks_match_one_pass(tiny_model, monkeypatch):
     monkeypatch.setattr(seldon, "split_size", lambda n, item_bytes, device: max(1, n // 4))
     chunked = tiny_model.encode_context(X[:, :ts], y, mask)
     torch.testing.assert_close(chunked, whole, rtol=1e-5, atol=1e-5)
+
+
+@torch.no_grad()
+def test_split_fits_free_memory(monkeypatch):
+    # sdm's limit allows 100 items of a byte, but only 30 bytes are free: 4 balanced chunks.
+    cuda = torch.device("cuda")
+    monkeypatch.setattr(seldon, "split_size", lambda n, item_bytes, device: 100)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda device: (20, 0))
+    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda device: 15)
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda device: 5)
+    assert seldon._split(100, 1, cuda) == 25
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda device: (1000, 0))
+    assert seldon._split(100, 1, cuda) == 100
