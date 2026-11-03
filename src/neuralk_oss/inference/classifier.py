@@ -202,6 +202,29 @@ class SeldonClassifier:
         proba[:, codes] = out.numerical.float().cpu().numpy()
         return proba
 
+    def to(self, device: str | torch.device) -> SeldonClassifier:
+        """Move the classifier, fitted or not, to ``device``: the network, the fitted preprocessing and the next tables' device.
+
+        The members' cached contexts stay where ``fit`` left them: fitted on
+        CUDA with several members, sdm keeps each batch's in pinned CPU memory
+        and ``predict_proba`` streams them to the device one at a time, so they
+        are never all on the GPU at once. Only a cache on another CUDA device
+        (a single member's) moves.
+        """
+        self.device = torch.device(device)
+        self.estimator.to(self.device)
+        cache = self.estimator._cache
+        if cache is None:
+            return self
+        recipe = cache["recipe_execution"].recipe
+        for processor in (recipe.features, recipe.target, recipe.output):
+            processor.to(self.device)
+        # shortcut: sdm's private cache layout (_cache, _apply_tensor), pinned at 0.2.1; recheck on an sdm upgrade.
+        self.estimator._cache = cache._apply_tensor(
+            lambda t: t.to(self.device) if t.is_cuda and t.device != self.device else t
+        )
+        return self
+
     def predict(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
         """The most probable class of each row of ``X``."""
         return self.classes_[self.predict_proba(X).argmax(axis=1)]

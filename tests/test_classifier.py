@@ -1,13 +1,16 @@
 # Copyright (c) 2026 Neuralk-AI
 # SPDX-License-Identifier: Apache-2.0
 
+import copy
 import inspect
+import pickle
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 import sdm.processing as sp
+import torch
 import yaml
 
 from neuralk_oss import SeldonClassifier, SeldonRecipe
@@ -235,3 +238,34 @@ def test_model_names_take_their_packaged_config(tiny_model, monkeypatch):
     # Any other checkpoint takes the constructor's defaults.
     clf = SeldonClassifier.from_pretrained(TINY, device="cpu")
     assert clf.n_estimators == 8
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="moves a CUDA-fitted classifier")
+@pytest.mark.parametrize("n_estimators", [4, 1])
+def test_to_moves_a_fitted_classifier(tiny_model, n_estimators):
+    X, y = _frame(80, 3)
+    clf = SeldonClassifier(
+        copy.deepcopy(tiny_model),
+        n_estimators=n_estimators,
+        device="cuda",
+        amp=False,
+    )
+    on_gpu = clf.fit(X[:60], y[:60]).predict_proba(X[60:])
+    pinned = {id(t) for t in clf.estimator._cache._tensors() if t.is_pinned()}
+    on_cpu = clf.to("cpu").predict_proba(X[60:])
+    np.testing.assert_allclose(on_cpu, on_gpu, rtol=1e-4, atol=1e-5)
+    assert not any(t.is_cuda for t in clf.estimator._cache._tensors())
+    # Members cached in pinned memory stay there, the same tensors.
+    assert pinned <= {id(t) for t in clf.estimator._cache._tensors()}
+    assert bool(pinned) == (n_estimators > 1)
+    # Moved to CPU, it pickles for a host without CUDA.
+    restored = pickle.loads(pickle.dumps(clf))
+    np.testing.assert_allclose(restored.predict_proba(X[60:]), on_cpu, rtol=1e-6, atol=1e-7)
+    back = clf.to("cuda").predict_proba(X[60:])
+    np.testing.assert_allclose(back, on_gpu, rtol=1e-5, atol=1e-6)
+
+
+def test_to_before_fit(tiny_model):
+    X, y = _frame(80, 3)
+    clf = SeldonClassifier(tiny_model, n_estimators=2, device="cpu").to("cpu")
+    assert clf.fit(X[:60], y[:60]).predict_proba(X[60:]).shape == (20, 3)
