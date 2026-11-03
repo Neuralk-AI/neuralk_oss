@@ -250,8 +250,16 @@ def _read_config(path: Path | Traversable) -> dict[str, Any]:
 
 
 def _frame(X: pd.DataFrame | np.ndarray) -> pd.DataFrame:
-    """``X`` as a DataFrame with string column names, which sdm requires."""
+    """``X`` as a DataFrame with string column names, which sdm requires, and signed integers for unsigned ones, which CUDA cannot index with."""
     if isinstance(X, pd.DataFrame):
-        return X.rename(columns=str)
-    X = np.asarray(X)
-    return pd.DataFrame(X, columns=[f"x{i}" for i in range(X.shape[1])])
+        X = X.rename(columns=str)
+    else:
+        X = np.asarray(X)
+        X = pd.DataFrame(X, columns=[f"x{i}" for i in range(X.shape[1])])
+    unsigned = {
+        name: "Int64" if isinstance(dtype, pd.api.extensions.ExtensionDtype) else "int64"
+        for name, dtype in X.dtypes.items()
+        if pd.api.types.is_unsigned_integer_dtype(dtype)
+    }
+    # shortcut: a uint64 above 2**63 wraps (numpy) or raises (nullable); none expected in tables.
+    return X.astype(unsigned) if unsigned else X

@@ -269,3 +269,21 @@ def test_to_before_fit(tiny_model):
     X, y = _frame(80, 3)
     clf = SeldonClassifier(tiny_model, n_estimators=2, device="cpu").to("cpu")
     assert clf.fit(X[:60], y[:60]).predict_proba(X[60:]).shape == (20, 3)
+
+
+def test_unsigned_columns_become_signed():
+    from neuralk_oss.inference import classifier
+
+    X = pd.DataFrame(
+        {
+            "a": np.array([1, 2], dtype=np.uint32),
+            "b": pd.array([3, None], dtype="UInt16"),
+            "c": [0.5, 1.5],
+        }
+    )
+    dtypes = classifier._frame(X).dtypes
+    assert dtypes.tolist() == [np.dtype("int64"), pd.Int64Dtype(), np.dtype("float64")]
+    assert (
+        classifier._frame(np.ones((2, 2), dtype=np.uint8)).dtypes.tolist()
+        == [np.dtype("int64")] * 2
+    )
