@@ -96,6 +96,10 @@ class ColEmbedding(nn.Module):
         cells = self._project_cells(x, missing, categorical)
         if y is not None:
             cells = cells + self.encode_targets(y).unsqueeze(2).to(cells.dtype)
+        device = X.device.type
+        if torch.is_autocast_enabled(device):
+            # The blocks carry the state in the autocast dtype, whatever precision embedded the cells.
+            return cells.to(torch.get_autocast_dtype(device))
         return cells
 
     def _grouped_cells(
@@ -117,7 +121,7 @@ class ColEmbedding(nn.Module):
         return x, missing, categorical
 
     def _project_cells(self, x: Tensor, missing: Tensor, categorical: Tensor) -> Tensor:
-        """``_grouped_cells``' output to the cells' embeddings ``(B, T, H, E)``, in fp32 under ``fp32_cells``."""
+        """``_grouped_cells``' output to the cells' embeddings ``(B, T, H, E)``, computed in fp32 under ``fp32_cells``."""
         if not self.fp32_cells:
             return self._fourier_projection(x, missing, categorical)
         with torch.autocast(x.device.type, enabled=False):

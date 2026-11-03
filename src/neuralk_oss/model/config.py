@@ -96,7 +96,8 @@ class SeldonConfig(_Config):
         block; the query gates, the cell embedding, the projection and the
         head keep theirs.
     fp32_cells : bool
-        Embed the cells in fp32 under autocast.
+        Compute the cell embeddings in fp32 under autocast; they are stored
+        in the autocast dtype either way.
     fp32_head : bool
         Run the ICL stage's final norm and head in fp32 under autocast.
     """
