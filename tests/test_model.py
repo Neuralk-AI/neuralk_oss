@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from neuralk_oss import Seldon
+from neuralk_oss.model import seldon
 from tests.conftest import tiny_config
 
 
@@ -113,3 +114,13 @@ def test_hub_checkpoints():
         "seldon-classifier": "Neuralk-AI/seldon",
         "seldon-mini-classifier": "Neuralk-AI/seldon-mini",
     }
+
+
+@torch.no_grad()
+def test_context_chunks_match_one_pass(tiny_model, monkeypatch):
+    X, y, ts, mask = _table()
+    whole = tiny_model.encode_context(X[:, :ts], y, mask)
+    # Slices of 7 rows (the last one short) and of 1 column.
+    monkeypatch.setattr(seldon, "split_size", lambda n, item_bytes, device: max(1, n // 4))
+    chunked = tiny_model.encode_context(X[:, :ts], y, mask)
+    torch.testing.assert_close(chunked, whole, rtol=1e-5, atol=1e-5)

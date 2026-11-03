@@ -31,10 +31,11 @@ from typing import Literal, TypedDict
 import torch
 from huggingface_hub import snapshot_download
 from safetensors.torch import load_file, save_file
+from sdm._memory import split_size
 from torch import Tensor, nn
 
 from neuralk_oss.model.col import ColEmbedding
-from neuralk_oss.model.config import FF_FACTOR, BlockConfig, SeldonConfig
+from neuralk_oss.model.config import FEATURE_GROUP_SIZE, FF_FACTOR, BlockConfig, SeldonConfig
 from neuralk_oss.model.icl import ICLearning
 from neuralk_oss.model.row import RowInteraction
 
@@ -129,16 +130,65 @@ class Seldon(nn.Module):
         col, row = self.col_embedder, self.row_interactor
         col.check_classes(y)
         categorical_mask = self._categorical_mask(X, categorical_mask)
+        B, T, H = X.shape
+        embed_step, col_step, row_step = self._context_steps(X)
         mean = col.context_mean(X)
-        state = row.state(col.embed(X, mean, categorical_mask, y))
+        # One state, each stage written into it in place, a slice at a time: a
+        # slice's output keeps the state's dtype, and reads only its own rows (or columns).
+        state = None
+        for t in range(0, max(T, 1), embed_step):
+            cells = col.embed(
+                X[:, t : t + embed_step], mean, categorical_mask, y[:, t : t + embed_step]
+            )
+            chunk = row.state(cells)
+            if state is None:
+                state = chunk.new_empty((B, T, *chunk.shape[2:]))
+            state[:, t : t + embed_step] = chunk
+        assert state is not None
         induced = []
-        for i, block in enumerate(col.tf_col.blocks):
-            cells = self._cells(state)
-            summary = block.induce(cells)
-            induced.append(summary)
-            state = self._after_column_block(i, state, block.expand(cells, summary))
-        R = row(state)
+        blocks = col.tf_col.blocks
+        for i, block in enumerate(blocks):
+            # A column block reads all context rows of a column, the inducing
+            # points over them: the slices are of columns.
+            cells, summaries = self._cells(state), []
+            for h in range(0, max(H, 1), col_step):
+                column = cells[:, h : h + col_step]
+                summaries.append(block.induce(column))
+                column[:] = block.expand(column, summaries[-1])
+            induced.append(torch.cat(summaries, dim=1))
+            if i < len(blocks) - 1:
+                for t in range(0, max(T, 1), row_step):
+                    state[:, t : t + row_step] = row.block(i, state[:, t : t + row_step])
+        R = torch.cat(
+            [row(state[:, t : t + row_step]) for t in range(0, max(T, 1), row_step)], dim=1
+        )
         return Context(mean=mean, induced=induced, icl=self.icl_predictor.encode_context(R, y))
+
+    def _context_steps(self, X: Tensor) -> tuple[int, int, int]:
+        """Rows per slice of the cell embedding, columns per slice of a column block, rows per slice of a row block, for the context ``X`` ``(B, T, H)``.
+
+        As sdm slices Kumo Tabular's stages: each slice within sdm's chunk
+        memory limit (a share of the GPU), by the same per-item estimates;
+        everything at once off CUDA.
+        """
+        B, T, H = X.shape
+        E, K = self.config.embed_dim, self.row_interactor.num_cls
+        cuda = X.device.type
+        size = (
+            torch.get_autocast_dtype(cuda).itemsize
+            if torch.is_autocast_enabled(cuda)
+            else X.element_size()
+        )
+        cell_size = 4 if self.col_embedder.fp32_cells else size
+        cell = 2 * FEATURE_GROUP_SIZE * self.config.num_frequencies * cell_size + 2 * E * size
+        # sdm's peak of a transformer block per sequence: factor x length x size x width.
+        # shortcut: sdm's private sizing (sdm._memory), pinned at 0.2.1; recheck on an sdm upgrade.
+        factor = 15 if size <= 2 else 8
+        return (
+            split_size(T, B * H * cell, X.device),
+            split_size(H, B * factor * T * size * E, X.device),
+            split_size(T, B * factor * (K + H) * size * E, X.device),
+        )
 
     def predict_query(
         self,
