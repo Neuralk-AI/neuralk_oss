@@ -285,8 +285,8 @@ class MultiheadAttentionBlock(nn.Module):
 
     def _finish(self, q: Tensor, attn: Tensor) -> Tensor:
         """The residual around attention, then the feedforward with its residual."""
-        x = q + attn
-        return x + self.linear2(F.gelu(self.linear1(kernels.norm(self.norm2, x))))
+        x = _add(attn, q)
+        return _add(self.linear2(F.gelu(self.linear1(kernels.norm(self.norm2, x)))), x)
 
     def _prenorm(self, x: Tensor) -> Tensor:
         """The query's norm, computed once for rows shared over the batch dims (the inducing points)."""
@@ -341,3 +341,12 @@ class BlockStack(nn.Module):
     def __init__(self, blocks: list[nn.Module]) -> None:
         super().__init__()
         self.blocks = nn.ModuleList(blocks)
+
+
+def _add(fresh: Tensor, other: Tensor) -> Tensor:
+    """``fresh + other``, written into ``fresh`` (a block's own intermediate) when it already has the sum's dtype and shape."""
+    if fresh.dtype == torch.result_type(fresh, other) and fresh.shape == torch.broadcast_shapes(
+        fresh.shape, other.shape
+    ):
+        return fresh.add_(other)
+    return fresh + other
