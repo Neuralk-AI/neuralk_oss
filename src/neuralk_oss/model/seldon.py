@@ -153,8 +153,10 @@ class Seldon(nn.Module):
             cells, summaries = self._cells(state), []
             for h in range(0, max(H, 1), col_step):
                 column = cells[:, h : h + col_step]
-                summaries.append(block.induce(column))
-                column[:] = block.expand(column, summaries[-1])
+                # One copy of the transposed view, where each norm would make its own.
+                dense = column.contiguous()
+                summaries.append(block.induce(dense))
+                column[:] = block.expand(dense, summaries[-1])
             induced.append(torch.cat(summaries, dim=1))
             if i < len(blocks) - 1:
                 for t in range(0, max(T, 1), row_step):
@@ -222,7 +224,7 @@ class Seldon(nn.Module):
         for i, (block, summary) in enumerate(zip(blocks, context["induced"], strict=True)):
             # In place, as encode_context: the column block's output keeps the state's dtype.
             cells = self._cells(state)
-            cells[:] = block.expand(cells, summary)
+            cells[:] = block.expand(cells.contiguous(), summary)
             if i < len(blocks) - 1:
                 state = row.block(i, state)
         return row(state)
