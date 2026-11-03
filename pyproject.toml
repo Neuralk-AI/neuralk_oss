@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "neuralk-oss"
-version = "0.2.1"
+version = "0.2.2"
 description = "Neuralk-AI open-source models: loading and inference"
 readme = "README.md"
 license = "Apache-2.0"
