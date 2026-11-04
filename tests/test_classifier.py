@@ -287,3 +287,21 @@ def test_unsigned_columns_become_signed():
         classifier._frame(np.ones((2, 2), dtype=np.uint8)).dtypes.tolist()
         == [np.dtype("int64")] * 2
     )
+
+
+@pytest.mark.parametrize("classes", [3, 13])
+def test_cache_budget_reencodes_the_same(tiny_model, classes, monkeypatch):
+    X, y = _frame(80, classes)
+    kwargs = dict(n_estimators=3, device="cpu", estimator_batch_size=1)
+    cached = SeldonClassifier(tiny_model, **kwargs)
+    bounded = SeldonClassifier(tiny_model, max_cache_gb=0, **kwargs)
+    expected = cached.fit(X[:60], y[:60]).predict_proba(X[60:])
+    encode = tiny_model.encode_context
+    calls = []
+    monkeypatch.setattr(tiny_model, "encode_context", lambda *a: calls.append(1) or encode(*a))
+    bounded.fit(X[:60], y[:60])
+    # Only the first encoding runs at fit: it sizes the members past it, left unencoded.
+    assert len(calls) == 1
+    np.testing.assert_allclose(bounded.predict_proba(X[60:]), expected, rtol=1e-5, atol=1e-6)
+    # Past the budget only the context rows are kept, far smaller than their encoding.
+    assert bounded.estimator._cache.size() < cached.estimator._cache.size()
