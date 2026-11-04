@@ -81,6 +81,10 @@ class SeldonClassifier:
         "auto" as many as ``member_batch_size`` gives for the context. sdm
         still separates members whose preprocessed tables differ in shape or
         classes, and each member's outputs are the same up to rounding.
+    max_cache_gb : float or None, default=8.0
+        GiB of context encodings ``fit`` keeps for ``predict_proba``, over all
+        members; members past it encode their context again at each call,
+        slower but within memory. None keeps them all.
     """
 
     def __init__(
@@ -96,6 +100,7 @@ class SeldonClassifier:
         recipe: SeldonRecipe | None = None,
         query_chunk_size: int = 8192,
         estimator_batch_size: int | Literal["auto"] | None = "auto",
+        max_cache_gb: float | None = 8.0,
     ) -> None:
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -106,7 +111,7 @@ class SeldonClassifier:
         self.cudnn_attention = cudnn_attention
         self.random_state = random_state
         self.estimator_batch_size = estimator_batch_size
-        self.estimator = SeldonICL(model, recipe, query_chunk_size).to(self.device)
+        self.estimator = SeldonICL(model, recipe, query_chunk_size, max_cache_gb).to(self.device)
 
     @classmethod
     def from_pretrained(
