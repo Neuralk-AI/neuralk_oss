@@ -4,6 +4,6 @@
 """Seldon's architecture and its checkpoints."""
 
 from neuralk_oss.model.config import SeldonConfig
-from neuralk_oss.model.seldon import Seldon, save_checkpoints
+from neuralk_oss.model.seldon import Seldon
 
-__all__ = ["Seldon", "SeldonConfig", "save_checkpoints"]
+__all__ = ["Seldon", "SeldonConfig"]

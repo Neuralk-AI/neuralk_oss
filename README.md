@@ -36,10 +36,9 @@ Keyword arguments override them, e.g. `from_pretrained("seldon", device="cpu")`.
 classification checkpoint; `Seldon.from_pretrained` takes the checkpoint name.
 
 A checkpoint directory holds one model, `config.json` and `model.safetensors`
-(as `Seldon.save_pretrained` writes it), or several sharing an architecture
-(as `neuralk_oss.model.save_checkpoints` writes them): `config.json` then names them under
-`checkpoints`, each with its head, and the weights of checkpoint `name` are
-`name.safetensors`. `from_pretrained` takes:
+(as `Seldon.save_pretrained` writes it), or several sharing an architecture:
+`config.json` then names them under `checkpoints`, each with its head, and the
+weights of checkpoint `name` are `name.safetensors`. `from_pretrained` takes:
 
 - a checkpoint name of the table above (or, for `SeldonClassifier`, a model
   name): its model's Hugging Face repository,

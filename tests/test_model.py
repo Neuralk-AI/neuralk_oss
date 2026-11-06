@@ -1,8 +1,11 @@
 # Copyright (c) 2026 Neuralk-AI
 # SPDX-License-Identifier: Apache-2.0
 
+import json
+
 import pytest
 import torch
+from safetensors.torch import save_file
 
 from neuralk_oss import Seldon
 from neuralk_oss.model import seldon
@@ -85,10 +88,21 @@ def _tiny_pair():
     return models
 
 
+def _save_checkpoints(path, models):
+    """``models`` as one directory of checkpoints: their shared architecture and heads in config.json, ``<name>.safetensors`` each."""
+    path.mkdir(parents=True, exist_ok=True)
+    config = {"model_version": Seldon.VERSION, **next(iter(models.values())).config.model_dump()}
+    config.pop("head")
+    config["checkpoints"] = {name: model.config.head.model_dump() for name, model in models.items()}
+    (path / "config.json").write_text(json.dumps(config))
+    for name, model in models.items():
+        save_file(model.state_dict(), path / f"{name}.safetensors")
+
+
 @torch.no_grad()
 def test_checkpoints_directory(tmp_path):
     models = _tiny_pair()
-    seldon.save_checkpoints(tmp_path, models)
+    _save_checkpoints(tmp_path, models)
     assert sorted(p.name for p in tmp_path.iterdir()) == [
         "config.json",
         "seldon-tiny-classifier.safetensors",
@@ -112,15 +126,10 @@ def test_checkpoints_directory(tmp_path):
     Seldon.from_pretrained(tmp_path / "single")
     with pytest.raises(ValueError, match="regression model, not classification"):
         Seldon.from_pretrained(tmp_path / "single", task="classification")
-    other = Seldon(tiny_config(embed_dim=8))
-    with pytest.raises(ValueError, match="architectures differ"):
-        seldon.save_checkpoints(
-            tmp_path / "mixed", {"a": models["seldon-tiny-classifier"], "b": other}
-        )
 
 
 def test_from_pretrained_hub_names(tmp_path, monkeypatch):
-    seldon.save_checkpoints(tmp_path / "hub_root", _tiny_pair())
+    _save_checkpoints(tmp_path / "hub_root", _tiny_pair())
     _tiny_pair()["seldon-tiny-classifier"].save_pretrained(
         tmp_path / "hub" / "seldon-tiny-classifier"
     )

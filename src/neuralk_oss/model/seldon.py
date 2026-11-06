@@ -278,9 +278,9 @@ class Seldon(nn.Module):
 
         A checkpoint directory holds one model, ``config.json`` and
         ``model.safetensors`` (as ``save_pretrained`` writes it), or several
-        sharing an architecture (as ``save_checkpoints`` writes them):
-        ``config.json`` then names them under ``checkpoints``, each with its
-        head, and the weights of checkpoint ``name`` are ``<name>.safetensors``.
+        sharing an architecture: ``config.json`` then names them under
+        ``checkpoints``, each with its head, and the weights of checkpoint
+        ``name`` are ``<name>.safetensors``.
 
         Parameters
         ----------
@@ -327,26 +327,6 @@ class Seldon(nn.Module):
         (path / CONFIG_NAME).write_text(json.dumps(config, indent=2) + "\n")
         state = {key: value.detach().contiguous() for key, value in self.state_dict().items()}
         save_file(state, path / WEIGHTS_NAME, metadata={"format": "pt"})
-
-
-def save_checkpoints(path: str | os.PathLike, models: dict[str, Seldon]) -> None:
-    """Save ``models``, one architecture with a head each, in the directory ``path`` as one checkpoint each, under their names.
-
-    ``config.json`` holds the architecture once and the heads under
-    ``checkpoints``; the weights of ``name`` are ``<name>.safetensors``.
-    """
-    configs = {name: model.config.model_dump() for name, model in models.items()}
-    heads = {name: config.pop("head") for name, config in configs.items()}
-    shared = next(iter(configs.values()))
-    if any(config != shared for config in configs.values()):
-        raise ValueError("the models' architectures differ beyond their heads")
-    path = Path(path)
-    path.mkdir(parents=True, exist_ok=True)
-    config = {"model_version": Seldon.VERSION, **shared, "checkpoints": heads}
-    (path / CONFIG_NAME).write_text(json.dumps(config, indent=2) + "\n")
-    for name, model in models.items():
-        state = {key: value.detach().contiguous() for key, value in model.state_dict().items()}
-        save_file(state, path / f"{name}.safetensors", metadata={"format": "pt"})
 
 
 def _split(num_items: int, item_bytes: int, device: torch.device) -> int:
