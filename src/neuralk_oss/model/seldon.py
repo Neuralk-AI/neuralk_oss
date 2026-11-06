@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict
 
 import torch
-from huggingface_hub import snapshot_download
+from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file, save_file
 from sdm._memory import split_size
 from torch import Tensor, nn
@@ -372,24 +372,17 @@ def resolve_checkpoint(
                 f"{name!r} is neither a local directory, a checkpoint name ({', '.join(HUB_CHECKPOINTS)}) "
                 "nor a Hugging Face repository id"
             )
-        prefix = f"{subfolder}/" if subfolder else ""
 
         def fetch(file: str) -> Path:
-            root = snapshot_download(
-                repo_id, revision=revision, token=token, allow_patterns=[prefix + file]
+            return Path(
+                hf_hub_download(repo_id, file, subfolder=subfolder, revision=revision, token=token)
             )
-            path = Path(root) / prefix / file
-            if not path.is_file():
-                raise FileNotFoundError(
-                    f"no Seldon checkpoint at {repo_id}/{prefix}: {file} is missing"
-                )
-            return path
 
     config = json.loads(fetch(CONFIG_NAME).read_text())
     heads = config.pop("checkpoints", None)
     if heads is None:
         if checkpoint is not None:
-            raise FileNotFoundError(f"{checkpoint!r}: {name_or_path} holds a single checkpoint")
+            raise FileNotFoundError(f"{repo_id} holds a single checkpoint, not {checkpoint!r}")
         if task is not None and config["head"]["task"] != task:
             raise ValueError(
                 f"the checkpoint at {name_or_path} is a {config['head']['task']} model, not {task}"
@@ -399,14 +392,14 @@ def resolve_checkpoint(
         matches = [n for n, head in heads.items() if task is None or head["task"] == task]
         if len(matches) != 1:
             found = ", ".join(f"{n} ({head['task']})" for n, head in heads.items())
-            raise ValueError(
-                f"{name_or_path} holds {found}: pass the task, classification or regression"
-            )
+            if task is None:
+                problem = "pass the task, classification or regression"
+            else:
+                problem = f"{'several' if matches else 'no'} {task} checkpoints match"
+            raise ValueError(f"{name_or_path} holds {found}: {problem}")
         checkpoint = matches[0]
     elif checkpoint not in heads:
-        raise FileNotFoundError(
-            f"{name_or_path} holds no checkpoint {checkpoint!r}: {', '.join(heads)}"
-        )
+        raise FileNotFoundError(f"{repo_id} holds no checkpoint {checkpoint!r}: {', '.join(heads)}")
     if task is not None and heads[checkpoint]["task"] != task:
         raise ValueError(f"{checkpoint} is a {heads[checkpoint]['task']} model, not {task}")
     config["head"] = heads[checkpoint]
