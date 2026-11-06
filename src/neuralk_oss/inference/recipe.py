@@ -68,12 +68,17 @@ class SeldonRecipe:
         How each member permutes its columns: coupled Latin permutations,
         independent ones, or none.
     class_shift : bool
-        Whether each member shifts the class codes cyclically, by its own offset.
+        Whether each member shifts the class codes cyclically, by its own
+        offset. Classifier only, as the next two.
     average_logits : bool
         Whether the members' logits are averaged before the softmax; otherwise
         their probabilities are averaged after it.
     softmax_temperature : float
         Divisor of the logits before the softmax.
+
+    A regressor's target is standardized and each member negates it with
+    probability 1/2; the members' quantiles are sorted, then averaged by a
+    trimmed mean, as in sdm.
     """
 
     max_features = 500

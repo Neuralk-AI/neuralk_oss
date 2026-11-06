@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Neuralk-AI
 # SPDX-License-Identifier: Apache-2.0
 
-"""Seldon as an sdm in-context model: sdm's preprocessing, ensembling, context cache and error-correcting output codes around ``Seldon``."""
+"""Seldon as an sdm in-context model: sdm's preprocessing, ensembling, context cache and (for a classifier) error-correcting output codes around ``Seldon``."""
 
 from __future__ import annotations
 
@@ -31,13 +31,16 @@ class SeldonICL(ICLModel):
     their context rows and encode them at each ``predict``. Members run in
     batches of the same shape, so the last batch's encoding tells a batch's
     size before it runs, and members past the budget are not encoded at ``fit``.
-    Above ``max_classes`` classes, sdm's error-correcting output codes run the
-    model once per code.
+
+    A classifier reads a categorical target; above ``max_classes`` classes,
+    sdm's error-correcting output codes run the model once per code. A
+    regressor reads a numerical target, standardized by the recipe, and
+    outputs its ``num_quantiles`` quantiles, columns ``q001``, ``q002``, ...
 
     Parameters
     ----------
     model : Seldon
-        A classifier.
+        A classifier or a regressor.
     recipe : SeldonRecipe, optional
         The preprocessing; ``SeldonRecipe()`` by default.
     query_chunk_size : int, default=8192
@@ -50,7 +53,9 @@ class SeldonICL(ICLModel):
     """
 
     supported_feature_stypes: ClassVar[frozenset[Stype]] = frozenset({Stype.numerical})
-    supported_target_stypes: ClassVar[frozenset[Stype]] = frozenset({Stype.categorical})
+    supported_target_stypes: ClassVar[frozenset[Stype]] = frozenset(
+        {Stype.categorical, Stype.numerical}
+    )
     supports_multi_target: ClassVar[bool] = False
     supports_related_tables: ClassVar[bool] = False
 
@@ -61,16 +66,17 @@ class SeldonICL(ICLModel):
         query_chunk_size: int = 8192,
         max_cache_gb: float | None = 8.0,
     ) -> None:
-        if model.max_classes <= 0:
-            raise ValueError("SeldonICL runs a classifier; the model is a regressor")
-        super().__init__(task="classification")
+        regressor = model.num_quantiles > 0
+        super().__init__(task="regression" if regressor else "classification")
         self.model = model
         self.recipe = SeldonRecipe() if recipe is None else recipe
         self.query_chunk_size = query_chunk_size
         self.max_cache_gb = max_cache_gb
         self._cached_bytes = 0
         self._member_bytes = 0.0
-        self.ecoc = ECOC(max_classes=model.max_classes)
+        self.ecoc = None if regressor else ECOC(max_classes=model.max_classes)
+        # Columns of the model's outputs: class logits or quantiles.
+        self._out_dim = model.num_quantiles if regressor else model.max_classes
         self.eval()
 
     @classmethod
@@ -103,6 +109,17 @@ class SeldonICL(ICLModel):
         else:
             x = torch.cat([x_context.numerical, x_query.numerical], dim=-2)
 
+        categorical_mask = categorical_mask.expand(*x.shape[:-2], -1)
+        if self.ecoc is None:
+            # As sdm's Kumo regressor: the standardized target in, no codes, the quantiles out.
+            if y_context is not None:
+                y = y_context.numerical.squeeze(-1)
+            else:
+                y = x.new_empty((*x.shape[:-2], 0))
+            out = self._network(x, y, categorical_mask=categorical_mask, cache=cache)
+            names = [f"q{i:03d}" for i in range(1, self.model.num_quantiles + 1)]
+            return TableTensor(columns={Stype.numerical: names}, numerical=out)
+
         if y_context is not None:
             y = y_context.categorical.code.squeeze(-1)
             classes = y_context.categorical.categories[0]
@@ -119,7 +136,7 @@ class SeldonICL(ICLModel):
             num_members=x.size(0) if x.dim() > 2 else 1,
             cache=cache,
             generator=generator,
-            categorical_mask=categorical_mask.expand(*x.shape[:-2], -1),
+            categorical_mask=categorical_mask,
         )
         return TableTensor(
             columns={Stype.numerical: [str(i) for i in classes.tolist()]},
@@ -134,7 +151,7 @@ class SeldonICL(ICLModel):
         categorical_mask: Tensor,
         cache: Cache | None = None,
     ) -> Tensor:
-        """The model on ``x`` ``(..., R, C)``, its first ``y.shape[-1]`` rows the context: logits of the others, ``(..., R - y.shape[-1], max_classes)``.
+        """The model on ``x`` ``(..., R, C)``, its first ``y.shape[-1]`` rows the context: logits or quantiles of the others, ``(..., R - y.shape[-1], max_classes or num_quantiles)``.
 
         Recording, ``x`` holds the context rows only and their encoding goes
         to ``cache`` (the rows themselves past ``max_cache_gb``); replaying,
@@ -161,7 +178,7 @@ class SeldonICL(ICLModel):
                 and self._over_budget(self._member_bytes * len(X))
             ):
                 cache[_RAW_KEY] = raw
-                return X.new_zeros((*lead, 0, self.model.max_classes))
+                return X.new_zeros((*lead, 0, self._out_dim))
             context = self.model.encode_context(x_context, y_context, mask)
             if cache is not None:
                 size = _nbytes(context)
@@ -181,7 +198,7 @@ class SeldonICL(ICLModel):
 
     def _predict(self, X: Tensor, context: dict[str, Any], mask: Tensor) -> Tensor:
         if X.shape[1] == 0:
-            return X.new_zeros((X.shape[0], 0, self.model.max_classes))
+            return X.new_zeros((X.shape[0], 0, self._out_dim))
         return self.model.predict_query(X, context, mask, chunk_size=self.query_chunk_size)
 
 

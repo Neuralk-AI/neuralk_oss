@@ -10,9 +10,10 @@ with ``UPDATE_GOLDEN=1 uv run pytest tests/test_golden.py`` and review them.
 With CUDA, the same cases also run on it under float16 autocast, the
 default inference path through the fused kernels, with a looser tolerance.
 The model's CUDA outputs are checked against the CPU references; the
-classifier's have their own, in ``expected/cuda``: its seeded generator is on
-the model's device, and CUDA's random streams differ from CPU's, so each
-member is preprocessed differently. Regenerating them needs a CUDA machine.
+classifier's and the regressor's have their own, in ``expected/cuda``: their
+seeded generator is on the model's device, and CUDA's random streams differ
+from CPU's, so each member is preprocessed differently. Regenerating them
+needs a CUDA machine.
 """
 
 import functools
@@ -24,7 +25,7 @@ import pandas as pd
 import pytest
 import torch
 
-from neuralk_oss import Seldon, SeldonClassifier, SeldonRecipe
+from neuralk_oss import Seldon, SeldonClassifier, SeldonRecipe, SeldonRegressor
 
 GOLDEN = Path(__file__).parent / "golden"
 UPDATE = os.environ.get("UPDATE_GOLDEN") == "1"
@@ -45,7 +46,8 @@ def tolerance(test: str, device: str) -> dict[str, float]:
         return {"rtol": 1e-4, "atol": 1e-5}
     # About 4x the float16 drift from float32 on an H100: 2.3e-4 on probabilities,
     # 2.6e-3 on logits, which leaves room for other GPUs.
-    return {"rtol": 0.0, "atol": {"classifier": 1e-3, "model": 1e-2}[test]}
+    # TODO: the regressor's (quantiles of a target of spread ~1.5), to measure on an H100.
+    return {"rtol": 0.0, "atol": {"classifier": 1e-3, "model": 1e-2, "regressor": 2e-2}[test]}
 
 
 @functools.cache
@@ -192,6 +194,47 @@ def test_classifier_golden(case, device):
         expected / f"classifier-{case.__name__}.npy",
         proba,
         tolerance("classifier", device),
+        reference=True,
+    )
+
+
+def clip_margin(rng):
+    X, y, _ = multiclass_mixed(rng)
+    return X, y, {"clip_margin": 0.1}
+
+
+# The classifier's tables that apply to a regressor, their labels replaced by a target.
+REGRESSOR_CASES = [
+    binary_numerical,
+    multiclass_mixed,
+    high_cardinality_categorical,
+    unseen_category,
+    degenerate_columns,
+    subsampled_context,
+    numpy_input,
+    single_query_row,
+    recipe_two_transforms,
+    half_shuffle,
+    clip_margin,
+]
+
+
+@pytest.mark.parametrize("device", DEVICES)
+@pytest.mark.parametrize("case", REGRESSOR_CASES, ids=lambda case: case.__name__)
+def test_regressor_golden(case, device):
+    rng = np.random.default_rng(0)
+    X, _, kwargs = case(rng)
+    # Two modes: a range narrow for the target's spread, which the tiny model's quantiles pass.
+    y = 10.0 + 3.0 * (rng.random(len(X)) < 0.5) + rng.uniform(size=len(X))
+    model = checkpoint("seldon-tiny-regressor", device)
+    reg = SeldonRegressor(model, n_estimators=3, device=device, **kwargs)
+    n_train = 60 if len(X) <= 80 else 100
+    quantiles = reg.fit(X[:n_train], y[:n_train]).predict_quantiles(X[n_train:])
+    expected = GOLDEN / "expected" / ("cuda" if device == "cuda" else "")
+    check(
+        expected / f"regressor-{case.__name__}.npy",
+        quantiles,
+        tolerance("regressor", device),
         reference=True,
     )
 

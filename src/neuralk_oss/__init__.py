@@ -5,8 +5,15 @@
 
 from importlib.metadata import version
 
-from neuralk_oss.inference import SeldonClassifier, SeldonICL, SeldonRecipe
+from neuralk_oss.inference import SeldonClassifier, SeldonICL, SeldonRecipe, SeldonRegressor
 from neuralk_oss.model import Seldon, SeldonConfig
 
-__all__ = ["Seldon", "SeldonClassifier", "SeldonConfig", "SeldonICL", "SeldonRecipe"]
+__all__ = [
+    "Seldon",
+    "SeldonClassifier",
+    "SeldonConfig",
+    "SeldonICL",
+    "SeldonRecipe",
+    "SeldonRegressor",
+]
 __version__ = version("neuralk-oss")

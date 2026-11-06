@@ -1,16 +1,22 @@
 # Every argument a config can set, at its default. Copy this file, keep the
-# keys you change, and load it with SeldonClassifier.from_config("path.yaml").
-# Keyword arguments of from_config override the file's keys.
+# keys you change, and load it with SeldonClassifier.from_config("path.yaml")
+# or SeldonRegressor.from_config("path.yaml"). Keyword arguments of
+# from_config override the file's keys.
 
-# --- The checkpoint (SeldonClassifier.from_pretrained) ---
-# A model name (seldon, seldon-mini), a checkpoint name, a local directory or a
-# Hugging Face repository.
+# --- The checkpoint (from_pretrained) ---
+# A model name (seldon, seldon-mini: its classifier or its regressor), a
+# checkpoint name, a local directory or a Hugging Face repository.
 checkpoint: seldon-mini
 subfolder: null          # the checkpoint's directory, for a repository of your own
 revision: null           # a branch, tag or commit of the repository
 token: null              # prefer `hf auth login`: never commit a token
 
-# --- The classifier (SeldonClassifier) ---
+# --- The regressor only (SeldonRegressor); uncomment it for one ---
+# Clamp the quantiles to the training target's range, widened by this fraction
+# of it on each side; null: no clamp. The released regressors' configs set 0.1.
+# clip_margin: null
+
+# --- The classifier or the regressor ---
 n_estimators: 8          # ensemble members
 device: null             # cuda when available, else cpu
 max_context_size: 200000 # training rows one member reads; more: each member its own random subset
@@ -35,9 +41,9 @@ recipe:
   half_shuffle: false
   flip_sign: true          # each member negates a random half of its numerical columns
   feature_shuffle: latin   # column permutation per member: latin, random, or null for none
-  class_shift: true        # each member shifts the class codes by its own offset
-  average_logits: true     # average the members' logits, else their probabilities
-  softmax_temperature: 1.0 # divisor of the logits before the softmax
+  class_shift: true        # classifier: each member shifts the class codes by its own offset
+  average_logits: true     # classifier: average the members' logits, else their probabilities
+  softmax_temperature: 1.0 # classifier: divisor of the logits before the softmax
   max_features: 500        # columns the model reads, cut after the shuffle
   standardize_eps: 1.0e-6  # epsilon of the per-column standardization
   clip_value: 100.0        # bound of the standardized values, before the transform
