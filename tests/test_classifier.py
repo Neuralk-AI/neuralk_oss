@@ -140,6 +140,7 @@ def test_from_pretrained_model_names(tiny_model, tmp_path, monkeypatch):
     )
     for name in ["seldon", "seldon-mini", "seldon-mini-classifier", "org/repo"]:
         SeldonClassifier.from_pretrained(name)
+    assert SeldonClassifier.from_pretrained("seldon-mini-regressor").n_estimators == 8
     # A local directory named like a model is read as such.
     (tmp_path / "seldon").mkdir()
     monkeypatch.chdir(tmp_path)
@@ -149,6 +150,7 @@ def test_from_pretrained_model_names(tiny_model, tmp_path, monkeypatch):
         "seldon-mini-classifier",
         "seldon-mini-classifier",
         "org/repo",
+        "seldon-mini-regressor",
         "seldon",
     ]
 
@@ -227,7 +229,12 @@ def test_model_names_take_their_packaged_config(tiny_model, monkeypatch):
     from neuralk_oss.model import Seldon
 
     monkeypatch.setattr(Seldon, "from_pretrained", lambda name, **_: tiny_model)
-    for name, size in [("seldon", 8), ("seldon-mini", 4)]:
+    for name, size in [
+        ("seldon", 8),
+        ("seldon-mini", 4),
+        ("seldon-classifier", 8),
+        ("seldon-mini-classifier", 4),
+    ]:
         clf = SeldonClassifier.from_pretrained(name, device="cpu")
         assert clf.n_estimators == size
         assert clf.estimator.recipe.half_shuffle

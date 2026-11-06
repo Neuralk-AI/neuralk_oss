@@ -196,6 +196,9 @@ def test_from_pretrained_model_names(tiny_regressor, tmp_path, monkeypatch):
     )
     for name in ["seldon", "seldon-mini", "seldon-mini-regressor", "org/repo"]:
         SeldonRegressor.from_pretrained(name, device="cpu")
+    # The classifier's checkpoint goes as it is, for Seldon.from_pretrained to refuse its task.
+    reg = SeldonRegressor.from_pretrained("seldon-mini-classifier", device="cpu")
+    assert (reg.n_estimators, reg.clip_margin) == (8, None)
     # A local directory named like a model is read as such.
     (tmp_path / "seldon").mkdir()
     monkeypatch.chdir(tmp_path)
@@ -205,13 +208,15 @@ def test_from_pretrained_model_names(tiny_regressor, tmp_path, monkeypatch):
         ("seldon-mini-regressor", "regression"),
         ("seldon-mini-regressor", "regression"),
         ("org/repo", "regression"),
+        ("seldon-mini-classifier", "regression"),
         ("seldon", "regression"),
     ]
 
 
 def test_model_names_take_their_packaged_config(tiny_regressor, monkeypatch):
     monkeypatch.setattr(Seldon, "from_pretrained", lambda name, **_: tiny_regressor)
-    for name in ["seldon", "seldon-mini"]:
+    # A model name or its regression checkpoint's: the same checkpoint, the same settings.
+    for name in ["seldon", "seldon-mini", "seldon-regressor", "seldon-mini-regressor"]:
         reg = SeldonRegressor.from_pretrained(name, device="cpu")
         assert (reg.n_estimators, reg.max_context_size, reg.random_state, reg.amp) == (
             4,
