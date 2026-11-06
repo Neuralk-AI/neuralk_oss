@@ -11,9 +11,12 @@ subfolder: null          # the checkpoint's directory, for a repository of your 
 revision: null           # a branch, tag or commit of the repository
 token: null              # prefer `hf auth login`: never commit a token
 
-# --- The regressor only (SeldonRegressor); uncomment it for one ---
+# --- The regressor only (SeldonRegressor) ---
 # Clamp the quantiles to the training target's range, widened by this fraction
-# of it on each side; null: no clamp. The released regressors' configs set 0.1.
+# of it on each side; null: no clamp. Commented out, as the classifier rejects
+# it; left out, a model name's packaged config sets it (0.1 for seldon and
+# seldon-mini), any other checkpoint takes the default, null. Uncomment it to
+# set it whatever the checkpoint.
 # clip_margin: null
 
 # --- The classifier or the regressor ---

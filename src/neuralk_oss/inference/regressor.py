@@ -100,6 +100,9 @@ class SeldonRegressor:
     ) -> None:
         if model.num_quantiles <= 0:
             raise ValueError("SeldonRegressor runs a regressor; the model is a classifier")
+        # Below 0 the clamp would cut into the target's range; below -0.5 its bounds would cross.
+        if clip_margin is not None and clip_margin < 0:
+            raise ValueError(f"clip_margin must be None or at least 0, got {clip_margin}")
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
@@ -149,13 +152,19 @@ class SeldonRegressor:
         ``recipe`` to ``SeldonRecipe``'s keyword arguments, and any other key to
         a keyword argument of ``from_pretrained``; ``kwargs`` override its keys.
         """
-        params = _config_params(config, kwargs)
+        params = _config_params(config, kwargs, "regression")
         return cls.from_pretrained(params.pop("checkpoint"), **params)
 
     def fit(self, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> SeldonRegressor:
-        """Keep ``X`` and ``y`` as the context of every member."""
+        """Keep ``X`` and ``y`` as the context of every member; ``y`` is one finite number per row, ``(n_rows,)`` or ``(n_rows, 1)``."""
         X = _frame(X)
         y = np.asarray(y, dtype=float)
+        if y.shape not in ((len(X),), (len(X), 1)):
+            raise ValueError(f"y must hold one target per row of X, {len(X)} rows; got {y.shape}")
+        y = y.reshape(-1)
+        # One NaN would make every prediction NaN: the standardization and the bounds read them all.
+        if not np.isfinite(y).all():
+            raise ValueError("y holds NaN or infinite values")
         self._bounds = None
         if self.clip_margin is not None:
             low, high, m = float(np.min(y)), float(np.max(y)), self.clip_margin
@@ -181,11 +190,13 @@ class SeldonRegressor:
 
     def predict_quantiles(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
         """The quantiles of each row of ``X``, ascending, clamped by ``clip_margin``: ``(n_rows, num_quantiles)``."""
-        return torch.cat([q.cpu() for q in self._quantiles(X)]).numpy()
+        empty = torch.empty(0, self.estimator.model.num_quantiles)
+        return torch.cat([empty, *(q.cpu() for q in self._quantiles(X))]).numpy()
 
     def predict(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
-        """The mean of each row's quantiles."""
-        return torch.cat([q.mean(dim=-1).cpu() for q in self._quantiles(X)]).numpy()
+        """The mean of each row's quantiles, ``(n_rows,)``."""
+        empty = torch.empty(0)
+        return torch.cat([empty, *(q.mean(dim=-1).cpu() for q in self._quantiles(X))]).numpy()
 
     def to(self, device: str | torch.device) -> SeldonRegressor:
         """Move the regressor, fitted or not, to ``device`` (see ``SeldonClassifier.to``)."""

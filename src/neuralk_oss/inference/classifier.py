@@ -142,7 +142,7 @@ class SeldonClassifier:
         ``recipe`` to ``SeldonRecipe``'s keyword arguments, and any other key to
         a keyword argument of ``from_pretrained``; ``kwargs`` override its keys.
         """
-        params = _config_params(config, kwargs)
+        params = _config_params(config, kwargs, "classification")
         return cls.from_pretrained(params.pop("checkpoint"), **params)
 
     def fit(self, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> SeldonClassifier:

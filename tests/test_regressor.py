@@ -128,6 +128,38 @@ def test_numpy_input(tiny_regressor):
     assert reg.fit(X[:40], y[:40].to_numpy()).predict(X[40:]).shape == (10,)
 
 
+def test_column_target(tiny_regressor):
+    flat, X_test, y = _fit(tiny_regressor)
+    X, _ = _frame(80)
+    column = SeldonRegressor(tiny_regressor, n_estimators=3, device="cpu")
+    column.fit(X[:60], y.to_frame())
+    np.testing.assert_array_equal(column.predict(X_test), flat.predict(X_test))
+    with pytest.raises(ValueError, match="one target per row"):
+        column.fit(X[:60], np.stack([y, y], axis=1))
+    with pytest.raises(ValueError, match="one target per row"):
+        column.fit(X[:60], y[:59])
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf])
+def test_non_finite_target(tiny_regressor, value):
+    X, y = _frame(80)
+    y = y[:60].copy()
+    y.iloc[3] = value
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        SeldonRegressor(tiny_regressor, device="cpu").fit(X[:60], y)
+
+
+def test_clip_margin_is_at_least_zero(tiny_regressor):
+    with pytest.raises(ValueError, match="clip_margin"):
+        SeldonRegressor(tiny_regressor, clip_margin=-0.1)
+
+
+def test_empty_test_table(tiny_regressor):
+    reg, X_test, _ = _fit(tiny_regressor, clip_margin=0.1)
+    assert reg.predict(X_test[:0]).shape == (0,)
+    assert reg.predict_quantiles(X_test[:0]).shape == (0, 9)
+
+
 def test_cache_budget_reencodes_the_same(tiny_regressor):
     kwargs = dict(estimator_batch_size=1)
     cached, X_test, _ = _fit(tiny_regressor, **kwargs)
@@ -182,7 +214,7 @@ def test_model_names_take_their_packaged_config(tiny_regressor, monkeypatch):
     for name in ["seldon", "seldon-mini"]:
         reg = SeldonRegressor.from_pretrained(name, device="cpu")
         assert (reg.n_estimators, reg.max_context_size, reg.random_state, reg.amp) == (
-            8,
+            4,
             200_000,
             0,
             True,
@@ -200,13 +232,24 @@ def test_model_names_take_their_packaged_config(tiny_regressor, monkeypatch):
 def test_packaged_config(name):
     # The packaged checkpoint is downloaded: the tiny one stands in for it.
     reg = SeldonRegressor.from_config(name, checkpoint=TINY, device="cpu")
-    assert (reg.n_estimators, reg.clip_margin) == (8, 0.1)
+    assert (reg.n_estimators, reg.clip_margin) == (4, 0.1)
     assert repr(reg.estimator.recipe.build()) == repr(SeldonRecipe(half_shuffle=True).build())
     X, y = _frame(80)
     assert reg.fit(X[:60], y[:60]).predict(X[60:]).shape == (20,)
 
 
-def test_template_config_lists_the_regressor_argument(tmp_path):
+def test_from_config_takes_its_own_task(tmp_path):
+    with pytest.raises(ValueError, match="unknown regression config 'seldon-mini'"):
+        SeldonRegressor.from_config("seldon-mini")
+    with pytest.raises(ValueError, match="unknown classification config 'seldon-mini-regressor'"):
+        SeldonClassifier.from_config("seldon-mini-regressor")
+    path = tmp_path / "run.yaml"
+    path.write_text(f"checkpoint: {TINY}\nclip_margin: 0.1\n")
+    with pytest.raises(ValueError, match="SeldonRegressor.from_config"):
+        SeldonClassifier.from_config(path)
+
+
+def test_template_config_lists_the_regressor_argument(tiny_regressor, tmp_path, monkeypatch):
     text = (CONFIGS / "template.yaml").read_text()
     signature = inspect.signature
     assert set(signature(SeldonRegressor.__init__).parameters) - set(
@@ -225,6 +268,10 @@ def test_template_config_lists_the_regressor_argument(tmp_path):
         k: v for k, v in vars(default).items() if k != "estimator"
     }
     assert repr(reg.estimator.recipe.build()) == repr(default.estimator.recipe.build())
+    # With the template's model name, clip_margin left out is its packaged config's.
+    monkeypatch.setattr(Seldon, "from_pretrained", lambda name, **_: tiny_regressor)
+    assert SeldonRegressor.from_config("template", device="cpu").clip_margin == 0.1
+    assert SeldonRegressor.from_config(path, device="cpu").clip_margin is None
 
 
 def test_to_before_fit(tiny_regressor):

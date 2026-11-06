@@ -22,6 +22,7 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from neuralk_oss.inference.estimator import SeldonICL
 from neuralk_oss.inference.recipe import SeldonRecipe
+from neuralk_oss.model.seldon import Task
 
 _TARGET = "target"
 _CONFIGS = files("neuralk_oss") / "configs"
@@ -115,15 +116,30 @@ def _move_estimator(estimator: SeldonICL, device: torch.device) -> None:
     )
 
 
-def _config_params(config: str | os.PathLike, kwargs: dict[str, Any]) -> dict[str, Any]:
-    """The keys of a YAML config, a packaged one by name or a file, with ``kwargs`` over them; they must name a ``checkpoint``."""
+def _config_params(config: str | os.PathLike, kwargs: dict[str, Any], task: Task) -> dict[str, Any]:
+    """The keys of a YAML config of ``task``, a packaged one by name or a file, with ``kwargs`` over them; they must name a ``checkpoint``.
+
+    A packaged regression config's name ends with ``-regressor``; ``template``
+    serves both tasks.
+    """
     path = Path(config)
     if path.suffix not in (".yaml", ".yml") and path.parent == Path():
-        names = sorted(p.name.removesuffix(".yaml") for p in _CONFIGS.iterdir())
+        names = sorted(
+            name
+            for p in _CONFIGS.iterdir()
+            if (name := p.name.removesuffix(".yaml")) == "template"
+            or name.endswith("-regressor") == (task == "regression")
+        )
         if str(config) not in names:
-            raise ValueError(f"unknown config {config!r}; packaged: {names}, or a .yaml path")
+            raise ValueError(
+                f"unknown {task} config {config!r}; packaged: {names}, or a .yaml path"
+            )
         path = _CONFIGS / f"{config}.yaml"
     params = {**_read_config(path), **kwargs}
+    if task == "classification" and "clip_margin" in params:
+        raise ValueError(
+            f"config {config!r} sets clip_margin, a regressor's: load it with SeldonRegressor.from_config"
+        )
     if "checkpoint" not in params:
         raise ValueError(f"config {config!r} names no checkpoint")
     return params
