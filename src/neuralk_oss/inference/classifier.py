@@ -137,7 +137,7 @@ class SeldonClassifier:
             kwargs = {**settings, **kwargs}
             name_or_path = checkpoint
         model = Seldon.from_pretrained(
-            name_or_path, subfolder=subfolder, revision=revision, token=token
+            name_or_path, task="classification", subfolder=subfolder, revision=revision, token=token
         )
         return cls(model, **kwargs)
 

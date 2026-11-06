@@ -1,8 +1,12 @@
 # Copyright (c) 2026 Neuralk-AI
 # SPDX-License-Identifier: Apache-2.0
 
+import json
+
 import pytest
 import torch
+from huggingface_hub.errors import EntryNotFoundError
+from safetensors.torch import save_file
 
 from neuralk_oss import Seldon
 from neuralk_oss.model import seldon
@@ -72,47 +76,119 @@ def test_save_load_roundtrip(tiny_model, tmp_path):
     )
 
 
-def test_from_pretrained_hub_names(tiny_model, tmp_path, monkeypatch):
-    from neuralk_oss.model import seldon
+def _tiny_pair():
+    """A tiny classifier and a regressor of the same architecture, random weights."""
+    models = {}
+    for seed, head in enumerate([None, {"task": "regression", "num_quantiles": 9}]):
+        torch.manual_seed(seed)
+        model = Seldon(tiny_config() if head is None else tiny_config(head=head)).eval()
+        with torch.no_grad():
+            for param in model.parameters():
+                param.normal_(0, 0.3)
+        models["seldon-tiny-regressor" if head else "seldon-tiny-classifier"] = model
+    return models
 
-    tiny_model.save_pretrained(tmp_path / "hub" / "seldon-tiny-classifier")
-    tiny_model.save_pretrained(tmp_path / "hub_root")
+
+def _save_checkpoints(path, models):
+    """``models`` as one directory of checkpoints: their shared architecture and heads in config.json, ``<name>.safetensors`` each."""
+    path.mkdir(parents=True, exist_ok=True)
+    config = {"model_version": Seldon.VERSION, **next(iter(models.values())).config.model_dump()}
+    config.pop("head")
+    config["checkpoints"] = {name: model.config.head.model_dump() for name, model in models.items()}
+    (path / "config.json").write_text(json.dumps(config))
+    for name, model in models.items():
+        save_file(model.state_dict(), path / f"{name}.safetensors")
+
+
+@torch.no_grad()
+def test_checkpoints_directory(tmp_path):
+    models = _tiny_pair()
+    _save_checkpoints(tmp_path, models)
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "config.json",
+        "seldon-tiny-classifier.safetensors",
+        "seldon-tiny-regressor.safetensors",
+    ]
+    X, y, ts, mask = _table()
+    for task, name in [
+        ("classification", "seldon-tiny-classifier"),
+        ("regression", "seldon-tiny-regressor"),
+    ]:
+        loaded = Seldon.from_pretrained(tmp_path, task=task)
+        assert loaded.config == models[name].config
+        y_ = y.float() if task == "regression" else y
+        torch.testing.assert_close(
+            loaded(X, y_, ts, categorical_mask=mask), models[name](X, y_, ts, categorical_mask=mask)
+        )
+    with pytest.raises(ValueError, match="pass the task"):
+        Seldon.from_pretrained(tmp_path)
+    # A single checkpoint's task is checked.
+    models["seldon-tiny-regressor"].save_pretrained(tmp_path / "single")
+    Seldon.from_pretrained(tmp_path / "single")
+    with pytest.raises(ValueError, match="regression model, not classification"):
+        Seldon.from_pretrained(tmp_path / "single", task="classification")
+    # Two checkpoints of one task: the task alone picks neither.
+    classifier = models["seldon-tiny-classifier"]
+    _save_checkpoints(tmp_path / "two", {"a": classifier, "b": classifier})
+    with pytest.raises(ValueError, match="several classification checkpoints match"):
+        Seldon.from_pretrained(tmp_path / "two", task="classification")
+    with pytest.raises(ValueError, match="no regression checkpoints match"):
+        Seldon.from_pretrained(tmp_path / "two", task="regression")
+
+
+def test_from_pretrained_hub_names(tmp_path, monkeypatch):
+    _save_checkpoints(tmp_path / "hub_root", _tiny_pair())
+    _tiny_pair()["seldon-tiny-classifier"].save_pretrained(
+        tmp_path / "hub" / "seldon-tiny-classifier"
+    )
     calls = []
 
-    def fake_download(repo_id, *, revision, token, allow_patterns):
-        calls.append((repo_id, revision, allow_patterns))
-        return str(tmp_path / ("hub_root" if repo_id == "org/tiny" else "hub"))
+    def fake_download(repo_id, filename, *, subfolder, revision, token):
+        calls.append((repo_id, revision, subfolder, filename))
+        path = (
+            tmp_path
+            / ("hub_root" if repo_id == "org/tiny" else "hub")
+            / (subfolder or "")
+            / filename
+        )
+        if not path.is_file():
+            raise EntryNotFoundError(f"{repo_id}: no {filename}")
+        return str(path)
 
-    monkeypatch.setattr(seldon, "snapshot_download", fake_download)
-    monkeypatch.setitem(seldon.HUB_CHECKPOINTS, "seldon-tiny-classifier", "org/tiny")
+    monkeypatch.setattr(seldon, "hf_hub_download", fake_download)
+    for name in ["seldon-tiny-classifier", "seldon-tiny-regressor"]:
+        monkeypatch.setitem(seldon.HUB_CHECKPOINTS, name, "org/tiny")
     monkeypatch.chdir(tmp_path)
-    # A checkpoint name downloads the root of its own repository.
-    Seldon.from_pretrained("seldon-tiny-classifier")
-    # A repository id, with the checkpoint's subfolder and a revision.
+    # A checkpoint name downloads the root config.json, then its own weights only.
+    assert Seldon.from_pretrained("seldon-tiny-regressor").num_quantiles == 9
+    # A repository id: its checkpoint by task, or a single one in a subfolder, at a revision.
+    assert Seldon.from_pretrained("org/tiny", task="classification").max_classes == 10
     Seldon.from_pretrained("org/repo", subfolder="seldon-tiny-classifier", revision="v1")
     assert calls == [
-        ("org/tiny", None, ["config.json", "model.safetensors"]),
-        (
-            "org/repo",
-            "v1",
-            ["seldon-tiny-classifier/config.json", "seldon-tiny-classifier/model.safetensors"],
-        ),
+        ("org/tiny", None, None, "config.json"),
+        ("org/tiny", None, None, "seldon-tiny-regressor.safetensors"),
+        ("org/tiny", None, None, "config.json"),
+        ("org/tiny", None, None, "seldon-tiny-classifier.safetensors"),
+        ("org/repo", "v1", "seldon-tiny-classifier", "config.json"),
+        ("org/repo", "v1", "seldon-tiny-classifier", "model.safetensors"),
     ]
     # A local directory is read in place.
     Seldon.from_pretrained(tmp_path / "hub", subfolder="seldon-tiny-classifier")
-    assert len(calls) == 2
-    with pytest.raises(ValueError, match="seldon-classifier, seldon-mini-classifier"):
+    assert len(calls) == 6
+    with pytest.raises(ValueError, match="regression model, not classification"):
+        Seldon.from_pretrained("seldon-tiny-regressor", task="classification")
+    with pytest.raises(ValueError, match="seldon-classifier, seldon-regressor"):
         Seldon.from_pretrained("seldon-missing-classifier")
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(EntryNotFoundError):
         Seldon.from_pretrained("org/repo", subfolder="seldon-missing-classifier")
 
 
 def test_hub_checkpoints():
-    from neuralk_oss.model.seldon import HUB_CHECKPOINTS
-
-    assert HUB_CHECKPOINTS == {
+    assert seldon.HUB_CHECKPOINTS == {
         "seldon-classifier": "Neuralk-AI/seldon",
+        "seldon-regressor": "Neuralk-AI/seldon",
         "seldon-mini-classifier": "Neuralk-AI/seldon-mini",
+        "seldon-mini-regressor": "Neuralk-AI/seldon-mini",
     }
 
 

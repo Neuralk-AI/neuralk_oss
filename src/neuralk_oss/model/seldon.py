@@ -26,10 +26,10 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 import torch
-from huggingface_hub import snapshot_download
+from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file, save_file
 from sdm._memory import split_size
 from torch import Tensor, nn
@@ -42,11 +42,16 @@ from neuralk_oss.model.row import RowInteraction
 CONFIG_NAME = "config.json"
 WEIGHTS_NAME = "model.safetensors"
 # The released checkpoints by name: the Hugging Face repository holding each at
-# its root, where the Hub counts downloads (a request for the root config.json).
+# its root, next to the other checkpoints of its architecture (see
+# ``from_pretrained``). Every load reads the root config.json, the request the
+# Hub counts as a download.
 HUB_CHECKPOINTS = {
     "seldon-classifier": "Neuralk-AI/seldon",
+    "seldon-regressor": "Neuralk-AI/seldon",
     "seldon-mini-classifier": "Neuralk-AI/seldon-mini",
+    "seldon-mini-regressor": "Neuralk-AI/seldon-mini",
 }
+Task = Literal["classification", "regression"]
 
 
 class Context(TypedDict):
@@ -263,21 +268,31 @@ class Seldon(nn.Module):
         cls,
         name_or_path: str | os.PathLike,
         *,
+        task: Task | None = None,
         subfolder: str | None = None,
         revision: str | None = None,
         token: str | None = None,
         device: str | torch.device = "cpu",
     ) -> Seldon:
-        """A saved model (``config.json`` and ``model.safetensors``), loaded strictly, in eval mode.
+        """A saved model, loaded strictly, in eval mode.
+
+        A checkpoint directory holds one model, ``config.json`` and
+        ``model.safetensors`` (as ``save_pretrained`` writes it), or several
+        sharing an architecture: ``config.json`` then names them under
+        ``checkpoints``, each with its head, and the weights of checkpoint
+        ``name`` are ``<name>.safetensors``.
 
         Parameters
         ----------
         name_or_path : str or PathLike
             A local directory; else a checkpoint name of ``HUB_CHECKPOINTS``,
-            ``"seldon-classifier"`` or ``"seldon-mini-classifier"``; else a
-            Hugging Face repository id
-            (``"org/repo"``). A checkpoint on the Hub is downloaded once into
-            the Hugging Face cache.
+            such as ``"seldon-mini-classifier"`` or ``"seldon-regressor"``;
+            else a Hugging Face repository id (``"org/repo"``). A checkpoint
+            on the Hub is downloaded once into the Hugging Face cache, with
+            only its own weights.
+        task : {"classification", "regression"}, optional
+            The checkpoint's task: picks it in a directory of several, and
+            checks it otherwise.
         subfolder : str, optional
             The checkpoint's directory inside the local directory or the
             repository.
@@ -290,8 +305,9 @@ class Seldon(nn.Module):
         device : str or torch.device, default="cpu"
             Device of the weights.
         """
-        path = resolve_checkpoint(name_or_path, subfolder=subfolder, revision=revision, token=token)
-        config = json.loads((path / CONFIG_NAME).read_text())
+        config, weights = resolve_checkpoint(
+            name_or_path, task=task, subfolder=subfolder, revision=revision, token=token
+        )
         version = config.pop("model_version", cls.VERSION)
         if version != cls.VERSION:
             raise ValueError(f"checkpoint of Seldon {version}, this is Seldon {cls.VERSION}")
@@ -299,7 +315,7 @@ class Seldon(nn.Module):
         # random initialization to overwrite, and the weights load onto device.
         with torch.device("meta"):
             model = cls(SeldonConfig.model_validate(config))
-        state = load_file(path / WEIGHTS_NAME, device=str(device))
+        state = load_file(weights, device=str(device))
         model.load_state_dict(state, strict=True, assign=True)
         return model.eval()
 
@@ -329,35 +345,62 @@ def _split(num_items: int, item_bytes: int, device: torch.device) -> int:
 def resolve_checkpoint(
     name_or_path: str | os.PathLike,
     *,
+    task: Task | None = None,
     subfolder: str | None = None,
     revision: str | None = None,
     token: str | None = None,
-) -> Path:
-    """The local directory of a checkpoint, downloaded from the Hub when ``name_or_path`` is not a local directory.
+) -> tuple[dict[str, Any], Path]:
+    """A checkpoint's config (its ``head`` set) and the local path of its weights, downloaded from the Hub when ``name_or_path`` is not a local directory.
 
-    A name without ``/`` is a checkpoint of ``HUB_CHECKPOINTS``: the root of its repository.
+    A name without ``/`` is a checkpoint of ``HUB_CHECKPOINTS``, at the root of its repository.
     """
+    name = str(name_or_path)
+    checkpoint = None
     local = Path(name_or_path) / (subfolder or "")
     if local.is_dir():
-        return local
-    name = str(name_or_path)
-    if "/" in name:
-        repo_id = name
-    elif subfolder is None and name in HUB_CHECKPOINTS:
-        repo_id = HUB_CHECKPOINTS[name]
+
+        def fetch(file: str) -> Path:
+            return local / file
+
     else:
-        raise ValueError(
-            f"{name!r} is neither a local directory, a checkpoint name ({', '.join(HUB_CHECKPOINTS)}) "
-            "nor a Hugging Face repository id"
-        )
-    prefix = f"{subfolder}/" if subfolder else ""
-    root = snapshot_download(
-        repo_id,
-        revision=revision,
-        token=token,
-        allow_patterns=[prefix + CONFIG_NAME, prefix + WEIGHTS_NAME],
-    )
-    path = Path(root) / (subfolder or "")
-    if not (path / CONFIG_NAME).is_file():
-        raise FileNotFoundError(f"no Seldon checkpoint at {repo_id}/{prefix}")
-    return path
+        if "/" in name:
+            repo_id = name
+        elif subfolder is None and name in HUB_CHECKPOINTS:
+            repo_id, checkpoint = HUB_CHECKPOINTS[name], name
+        else:
+            raise ValueError(
+                f"{name!r} is neither a local directory, a checkpoint name ({', '.join(HUB_CHECKPOINTS)}) "
+                "nor a Hugging Face repository id"
+            )
+
+        def fetch(file: str) -> Path:
+            return Path(
+                hf_hub_download(repo_id, file, subfolder=subfolder, revision=revision, token=token)
+            )
+
+    config = json.loads(fetch(CONFIG_NAME).read_text())
+    heads = config.pop("checkpoints", None)
+    if heads is None:
+        if checkpoint is not None:
+            raise FileNotFoundError(f"{repo_id} holds a single checkpoint, not {checkpoint!r}")
+        if task is not None and config["head"]["task"] != task:
+            raise ValueError(
+                f"the checkpoint at {name_or_path} is a {config['head']['task']} model, not {task}"
+            )
+        return config, fetch(WEIGHTS_NAME)
+    if checkpoint is None:
+        matches = [n for n, head in heads.items() if task is None or head["task"] == task]
+        if len(matches) != 1:
+            found = ", ".join(f"{n} ({head['task']})" for n, head in heads.items())
+            if task is None:
+                problem = "pass the task, classification or regression"
+            else:
+                problem = f"{'several' if matches else 'no'} {task} checkpoints match"
+            raise ValueError(f"{name_or_path} holds {found}: {problem}")
+        checkpoint = matches[0]
+    elif checkpoint not in heads:
+        raise FileNotFoundError(f"{repo_id} holds no checkpoint {checkpoint!r}: {', '.join(heads)}")
+    if task is not None and heads[checkpoint]["task"] != task:
+        raise ValueError(f"{checkpoint} is a {heads[checkpoint]['task']} model, not {task}")
+    config["head"] = heads[checkpoint]
+    return config, fetch(f"{checkpoint}.safetensors")
