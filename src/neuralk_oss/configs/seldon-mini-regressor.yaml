@@ -3,7 +3,7 @@
 # column (half_shuffle); the quantiles are clamped to the training target's
 # range, widened by 0.1 of it on each side (clip_margin).
 checkpoint: seldon-mini
-n_estimators: 8  # TODO: the release's members, after the step-20000 sweep
+n_estimators: 4  # TODO: the release's members, after the step-20000 sweep
 max_context_size: 200000
 random_state: 0
 amp: true
