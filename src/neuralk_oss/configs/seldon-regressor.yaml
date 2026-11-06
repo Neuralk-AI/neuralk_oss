@@ -1,0 +1,12 @@
+# Seldon's regressor: the first half of the members (rounded up) read categorical
+# codes sorted by value, the second half in a random order per column
+# (half_shuffle); the quantiles are clamped to the training target's range,
+# widened by 0.1 of it on each side (clip_margin).
+checkpoint: seldon
+n_estimators: 4  
+max_context_size: 200000
+random_state: 0
+amp: true
+clip_margin: 0.1
+recipe:  # SeldonRecipe's keyword arguments
+  half_shuffle: true

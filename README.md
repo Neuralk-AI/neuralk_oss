@@ -7,8 +7,9 @@ Neuralk-AI open-source models.
 ## Seldon
 
 Seldon is a tabular in-context-learning foundation model: `fit` keeps the
-training table as context, `predict_proba` classifies new rows against it in
-one forward pass, with no gradient step.
+training table as context, `predict_proba` classifies new rows against it (or
+a regressor's `predict` estimates their target, see [Regression](#regression))
+in one forward pass, with no gradient step.
 
 ```python
 from neuralk_oss import SeldonClassifier
@@ -33,15 +34,16 @@ Keyword arguments override them, e.g. `from_pretrained("seldon", device="cpu")`.
 | `seldon-mini` | `seldon-mini-regressor` | regression, 999 quantiles | 28.4M |
 
 `SeldonClassifier.from_pretrained` takes the model name and loads its
-classification checkpoint; `Seldon.from_pretrained` takes the checkpoint name.
+classification checkpoint, `SeldonRegressor.from_pretrained` its regression
+checkpoint; `Seldon.from_pretrained` takes the checkpoint name.
 
 A checkpoint directory holds one model, `config.json` and `model.safetensors`
 (as `Seldon.save_pretrained` writes it), or several sharing an architecture:
 `config.json` then names them under `checkpoints`, each with its head, and the
 weights of checkpoint `name` are `name.safetensors`. `from_pretrained` takes:
 
-- a checkpoint name of the table above (or, for `SeldonClassifier`, a model
-  name): its model's Hugging Face repository,
+- a checkpoint name of the table above (or, for `SeldonClassifier` and
+  `SeldonRegressor`, a model name): its model's Hugging Face repository,
   [`Neuralk-AI/seldon`](https://huggingface.co/Neuralk-AI/seldon) or
   [`Neuralk-AI/seldon-mini`](https://huggingface.co/Neuralk-AI/seldon-mini),
   holds both checkpoints at its root; the first call downloads `config.json`
@@ -52,7 +54,7 @@ weights of checkpoint `name` are `name.safetensors`. `from_pretrained` takes:
   revision: `from_pretrained("Neuralk-AI/seldon-mini", task="regression")`,
   `from_pretrained("org/repo", subfolder="seldon-mini-classifier", revision="v1")`.
   `task` picks the checkpoint in a directory of several (`SeldonClassifier`
-  passes `"classification"`).
+  passes `"classification"`, `SeldonRegressor` `"regression"`).
 
 The repositories are private for now: log in once with an account that can read
 them (`hf auth login`), or pass `token=...` to `from_pretrained`.
@@ -63,6 +65,26 @@ members (8 by default) sees its own preprocessing, and their logits are
 averaged. Inference runs in float16 autocast on CUDA by default
 (`amp=False` for float32). Tables with more classes than the model's head
 (10) go through error-correcting output codes.
+
+### Regression
+
+```python
+from neuralk_oss import SeldonRegressor
+
+reg = SeldonRegressor.from_pretrained("seldon-mini")  # or "seldon"
+reg.fit(X_train, y_train)  # pandas DataFrame (or array) and a numerical target
+y_pred = reg.predict(X_test)  # (n_rows,): the mean of each row's quantiles
+quantiles = reg.predict_quantiles(X_test)  # (n_rows, 999), ascending
+```
+
+`SeldonRegressor` takes the classifier's arguments, plus `clip_margin`. The
+target is standardized for the model; each member's quantiles, back in the
+target's units, are sorted, then averaged over the members by a trimmed mean.
+With `clip_margin`, they are clamped to the training target's range, widened
+by `clip_margin` times that range on each side; the constructor's default,
+`None`, leaves them unclamped. A model's name loads its regression checkpoint
+with its packaged config, `seldon-regressor` or `seldon-mini-regressor`: half
+the members read categories in a shuffled order, and `clip_margin=0.1`.
 
 ### Preprocessing
 
@@ -112,7 +134,9 @@ For full control over a run, beyond `from_pretrained`'s defaults, a YAML
 config sets the checkpoint, the classifier and its recipe in one file:
 `checkpoint`, any keyword argument of `from_pretrained`, and `recipe`,
 `SeldonRecipe`'s keyword arguments. Each released model's settings are a packaged config of its name,
-which `from_pretrained` loads: `seldon` and `seldon-mini`.
+which `from_pretrained` loads: `seldon` and `seldon-mini` for the classifiers,
+`seldon-regressor` and `seldon-mini-regressor` for the regressors
+(`SeldonRegressor.from_config("seldon-regressor")`).
 
 ```yaml
 # seldon.yaml

@@ -6,10 +6,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
-from contextlib import contextmanager, nullcontext
-from importlib.resources import files
-from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,31 +13,25 @@ import numpy as np
 import pandas as pd
 import sdm
 import torch
-import yaml
-from torch.nn.attention import SDPBackend, sdpa_kernel
 
+from neuralk_oss.inference._inference import (
+    _CONFIGS,
+    _TARGET,
+    MEMBER_BATCH_CELLS,
+    _config_params,
+    _fit_members,
+    _frame,
+    _inference,
+    _move_estimator,
+    _read_config,
+    member_batch_size,
+)
 from neuralk_oss.inference.estimator import SeldonICL
 from neuralk_oss.inference.recipe import SeldonRecipe
 from neuralk_oss.model import Seldon
 from neuralk_oss.model.seldon import HUB_CHECKPOINTS
 
-_TARGET = "target"
-_CONFIGS = files("neuralk_oss") / "configs"
-# Every attention kernel PyTorch has but cuDNN's (see ``cudnn_attention``).
-_NON_CUDNN_ATTENTION = [
-    SDPBackend.FLASH_ATTENTION,
-    SDPBackend.EFFICIENT_ATTENTION,
-    SDPBackend.MATH,
-]
-# Context cells (rows x features) one batch of members holds at most by default:
-# below it a member alone leaves the GPU idle, so members run together; above
-# it they run one at a time, as fast, in a fraction of the memory.
-MEMBER_BATCH_CELLS = 400_000
-
-
-def member_batch_size(n_rows: int, n_features: int, n_estimators: int) -> int:
-    """Members run together on a context of ``n_rows`` x ``n_features``, within ``MEMBER_BATCH_CELLS``."""
-    return max(1, min(n_estimators, MEMBER_BATCH_CELLS // max(n_rows * n_features, 1)))
+__all__ = ["MEMBER_BATCH_CELLS", "SeldonClassifier", "member_batch_size"]
 
 
 class SeldonClassifier:
@@ -102,6 +92,8 @@ class SeldonClassifier:
         estimator_batch_size: int | Literal["auto"] | None = "auto",
         max_cache_gb: float | None = 8.0,
     ) -> None:
+        if model.max_classes <= 0:
+            raise ValueError("SeldonClassifier runs a classifier; the model is a regressor")
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
@@ -125,14 +117,15 @@ class SeldonClassifier:
     ) -> SeldonClassifier:
         """The classifier of a saved model: a released model's name, ``"seldon"`` or ``"seldon-mini"``, or what ``Seldon.from_pretrained`` takes (a local directory, a checkpoint name such as ``"seldon-mini-classifier"``, a Hub repository); ``kwargs`` are the constructor's.
 
-        A released model's name also takes the settings of its packaged config
-        (``configs/<name>.yaml``: n_estimators, recipe, ...), which ``kwargs``
-        override; anything else takes the constructor's defaults.
+        A released model's name, or its classification checkpoint's, also
+        takes the settings of its packaged config (``configs/<model>.yaml``:
+        n_estimators, recipe, ...), which ``kwargs`` override; anything else
+        takes the constructor's defaults.
         """
-        # A model name is its classification checkpoint; a local directory of that name wins.
-        checkpoint = f"{name_or_path}-classifier"
+        model_name = str(name_or_path).removesuffix("-classifier")
+        checkpoint = f"{model_name}-classifier"
         if subfolder is None and checkpoint in HUB_CHECKPOINTS and not Path(name_or_path).is_dir():
-            settings = _read_config(_CONFIGS / f"{name_or_path}.yaml")
+            settings = _read_config(_CONFIGS / f"{model_name}.yaml")
             settings.pop("checkpoint", None)
             kwargs = {**settings, **kwargs}
             name_or_path = checkpoint
@@ -149,15 +142,7 @@ class SeldonClassifier:
         ``recipe`` to ``SeldonRecipe``'s keyword arguments, and any other key to
         a keyword argument of ``from_pretrained``; ``kwargs`` override its keys.
         """
-        path = Path(config)
-        if path.suffix not in (".yaml", ".yml") and path.parent == Path():
-            names = sorted(p.name.removesuffix(".yaml") for p in _CONFIGS.iterdir())
-            if str(config) not in names:
-                raise ValueError(f"unknown config {config!r}; packaged: {names}, or a .yaml path")
-            path = _CONFIGS / f"{config}.yaml"
-        params = {**_read_config(path), **kwargs}
-        if "checkpoint" not in params:
-            raise ValueError(f"config {config!r} names no checkpoint")
+        params = _config_params(config, kwargs, "classification")
         return cls.from_pretrained(params.pop("checkpoint"), **params)
 
     def fit(self, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> SeldonClassifier:
@@ -169,29 +154,18 @@ class SeldonClassifier:
         y_context = sdm.TableTensor.from_pandas(
             df=pd.DataFrame({_TARGET: codes}), stypes={_TARGET: "categorical"}
         )
-        num_estimators: int | None = self.n_estimators
-        self._subsampled = len(X) > self.max_context_size
-        if self._subsampled:
-            generator = torch.Generator().manual_seed(self.random_state)
-            repeats = -(-self.n_estimators * self.max_context_size // len(X))
-            permutations = [torch.randperm(len(X), generator=generator) for _ in range(repeats)]
-            shape = (self.n_estimators, self.max_context_size)
-            index = torch.cat(permutations)[: shape[0] * shape[1]]
-            x_context = x_context[index].unflatten(0, shape)
-            y_context = y_context[index].unflatten(0, shape)
-            num_estimators = None
-        batch_size = self.estimator_batch_size
-        if batch_size == "auto":
-            n_rows, n_features = x_context.shape[-2:]
-            batch_size = member_batch_size(n_rows, n_features, self.n_estimators)
-        with self._inference():
-            self.estimator.fit(
-                x=x_context.to(self.device),
-                y=y_context.to(self.device),
-                num_estimators=num_estimators,
-                estimator_batch_size=batch_size,
-                generator=torch.Generator(self.device).manual_seed(self.random_state),
-            )
+        self._subsampled = _fit_members(
+            self.estimator,
+            x_context,
+            y_context,
+            n_estimators=self.n_estimators,
+            max_context_size=self.max_context_size,
+            random_state=self.random_state,
+            estimator_batch_size=self.estimator_batch_size,
+            device=self.device,
+            amp=self.amp,
+            cudnn_attention=self.cudnn_attention,
+        )
         return self
 
     def predict_proba(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
@@ -200,7 +174,7 @@ class SeldonClassifier:
         query = sdm.TableTensor.from_pandas(df=X, stypes=self._stypes, device=self.device)
         if self._subsampled:
             query = query.expand(self.n_estimators, *query.size())
-        with self._inference():
+        with _inference(self.device, self.amp, self.cudnn_attention):
             out = self.estimator.predict(query)
         codes = [int(code) for code in out.columns[sdm.Stype.numerical]]
         proba = np.zeros((len(X), len(self.classes_)), dtype=np.float32)
@@ -217,54 +191,9 @@ class SeldonClassifier:
         (a single member's) moves.
         """
         self.device = torch.device(device)
-        self.estimator.to(self.device)
-        cache = self.estimator._cache
-        if cache is None:
-            return self
-        recipe = cache["recipe_execution"].recipe
-        for processor in (recipe.features, recipe.target, recipe.output):
-            processor.to(self.device)
-        # shortcut: sdm's private cache layout (_cache, _apply_tensor), pinned at 0.2.1; recheck on an sdm upgrade.
-        self.estimator._cache = cache._apply_tensor(
-            lambda t: t.to(self.device) if t.is_cuda and t.device != self.device else t
-        )
+        _move_estimator(self.estimator, self.device)
         return self
 
     def predict(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
         """The most probable class of each row of ``X``."""
         return self.classes_[self.predict_proba(X).argmax(axis=1)]
-
-    @contextmanager
-    def _inference(self) -> Iterator[None]:
-        amp = self.amp and self.device.type == "cuda"
-        attention = nullcontext() if self.cudnn_attention else sdpa_kernel(_NON_CUDNN_ATTENTION)
-        with (
-            torch.inference_mode(),
-            torch.autocast(self.device.type, dtype=torch.float16, enabled=amp),
-            attention,
-        ):
-            yield
-
-
-def _read_config(path: Path | Traversable) -> dict[str, Any]:
-    """A YAML config's keys, its ``recipe`` built as a ``SeldonRecipe``."""
-    params = yaml.safe_load(path.read_text()) or {}
-    if isinstance(params.get("recipe"), dict):
-        params["recipe"] = SeldonRecipe(**params["recipe"])
-    return params
-
-
-def _frame(X: pd.DataFrame | np.ndarray) -> pd.DataFrame:
-    """``X`` as a DataFrame with string column names, which sdm requires, and signed integers for unsigned ones, which CUDA cannot index with."""
-    if isinstance(X, pd.DataFrame):
-        X = X.rename(columns=str)
-    else:
-        X = np.asarray(X)
-        X = pd.DataFrame(X, columns=[f"x{i}" for i in range(X.shape[1])])
-    unsigned = {
-        name: "Int64" if isinstance(dtype, pd.api.extensions.ExtensionDtype) else "int64"
-        for name, dtype in X.dtypes.items()
-        if pd.api.types.is_unsigned_integer_dtype(dtype)
-    }
-    # shortcut: a uint64 above 2**63 wraps (numpy) or raises (nullable); none expected in tables.
-    return X.astype(unsigned) if unsigned else X

@@ -26,12 +26,21 @@ def tiny_config(**overrides) -> SeldonConfig:
     return SeldonConfig.model_validate({**config, **overrides})
 
 
-@pytest.fixture
-def tiny_model() -> Seldon:
+def _random_model(config: SeldonConfig) -> Seldon:
     torch.manual_seed(0)
-    model = Seldon(tiny_config()).eval()
+    model = Seldon(config).eval()
     # Random weights everywhere, so no zero-initialized layer hides a path.
     with torch.no_grad():
         for param in model.parameters():
             param.normal_(0, 0.3)
     return model
+
+
+@pytest.fixture
+def tiny_model() -> Seldon:
+    return _random_model(tiny_config())
+
+
+@pytest.fixture
+def tiny_regressor() -> Seldon:
+    return _random_model(tiny_config(head={"task": "regression", "num_quantiles": 9}))

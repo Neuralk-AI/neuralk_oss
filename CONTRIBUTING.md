@@ -5,7 +5,7 @@
 ```
 src/neuralk_oss/
 ├── model/       # Seldon's architecture, config and checkpoint format
-└── inference/   # sdm estimator, preprocessing recipe, scikit-learn style classifier
+└── inference/   # sdm estimator, preprocessing recipe, scikit-learn style classifier and regressor
 tests/
 ```
 
@@ -30,8 +30,8 @@ uvx pre-commit install
 (`tests/golden/`) to saved references. After an intended change of outputs,
 regenerate them with `UPDATE_GOLDEN=1 uv run pytest tests/test_golden.py` and
 commit the new `tests/golden/expected/`. With CUDA, the same cases also run on
-the GPU in float16 autocast; the classifier's CUDA references
-(`tests/golden/expected/cuda/`) are only regenerated on a CUDA machine.
+the GPU in float16 autocast; the classifier's and the regressor's CUDA
+references (`tests/golden/expected/cuda/`) are only regenerated on a CUDA machine.
 
 On a machine with a CUDA GPU, [tox](https://tox.wiki) runs the whole suite in
 two environments, `gpu-ours` (the versions of `uv.lock`) and `gpu-tabarena`
