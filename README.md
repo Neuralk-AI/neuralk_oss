@@ -28,24 +28,32 @@ Keyword arguments override them, e.g. `from_pretrained("seldon", device="cpu")`.
 | model | checkpoint | task | parameters |
 | --- | --- | --- | --- |
 | `seldon` | `seldon-classifier` | classification, up to 10 classes per model call | 213.5M |
+| `seldon` | `seldon-regressor` | regression, 999 quantiles | 215.5M |
 | `seldon-mini` | `seldon-mini-classifier` | classification, up to 10 classes per model call | 27.4M |
+| `seldon-mini` | `seldon-mini-regressor` | regression, 999 quantiles | 28.4M |
 
 `SeldonClassifier.from_pretrained` takes the model name and loads its
 classification checkpoint; `Seldon.from_pretrained` takes the checkpoint name.
 
-A checkpoint is a directory holding `config.json` and `model.safetensors`.
-`from_pretrained` takes:
+A checkpoint directory holds one model, `config.json` and `model.safetensors`
+(as `Seldon.save_pretrained` writes it), or several sharing an architecture
+(as `neuralk_oss.model.save_checkpoints` writes them): `config.json` then names them under
+`checkpoints`, each with its head, and the weights of checkpoint `name` are
+`name.safetensors`. `from_pretrained` takes:
 
 - a checkpoint name of the table above (or, for `SeldonClassifier`, a model
-  name): downloaded from its Hugging Face repository,
+  name): its model's Hugging Face repository,
   [`Neuralk-AI/seldon`](https://huggingface.co/Neuralk-AI/seldon) or
   [`Neuralk-AI/seldon-mini`](https://huggingface.co/Neuralk-AI/seldon-mini),
-  where the checkpoint is at the root, on the first call, then read from the
-  Hugging Face cache (`~/.cache/huggingface`, or `HF_HOME`);
+  holds both checkpoints at its root; the first call downloads `config.json`
+  and that checkpoint's weights, later ones read the Hugging Face cache
+  (`~/.cache/huggingface`, or `HF_HOME`);
 - a local directory, read in place: `from_pretrained("path/to/seldon-mini-classifier")`;
-- any Hugging Face repository, its root or the checkpoint's directory, and a
-  revision: `from_pretrained("Neuralk-AI/seldon-mini")`,
+- any Hugging Face repository, its root or a checkpoint's directory, and a
+  revision: `from_pretrained("Neuralk-AI/seldon-mini", task="regression")`,
   `from_pretrained("org/repo", subfolder="seldon-mini-classifier", revision="v1")`.
+  `task` picks the checkpoint in a directory of several (`SeldonClassifier`
+  passes `"classification"`).
 
 The repositories are private for now: log in once with an account that can read
 them (`hf auth login`), or pass `token=...` to `from_pretrained`.
