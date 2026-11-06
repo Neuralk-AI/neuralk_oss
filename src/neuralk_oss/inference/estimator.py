@@ -75,7 +75,6 @@ class SeldonICL(ICLModel):
         self._cached_bytes = 0
         self._member_bytes = 0.0
         self.ecoc = None if regressor else ECOC(max_classes=model.max_classes)
-        # Columns of the model's outputs: class logits or quantiles.
         self._out_dim = model.num_quantiles if regressor else model.max_classes
         self.eval()
 
@@ -111,7 +110,6 @@ class SeldonICL(ICLModel):
 
         categorical_mask = categorical_mask.expand(*x.shape[:-2], -1)
         if self.ecoc is None:
-            # As sdm's Kumo regressor: the standardized target in, no codes, the quantiles out.
             if y_context is not None:
                 y = y_context.numerical.squeeze(-1)
             else:

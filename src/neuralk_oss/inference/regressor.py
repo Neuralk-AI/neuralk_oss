@@ -31,8 +31,6 @@ from neuralk_oss.inference.recipe import SeldonRecipe
 from neuralk_oss.model import Seldon
 from neuralk_oss.model.seldon import HUB_CHECKPOINTS
 
-# Test rows per call to sdm's predict: the members' quantiles of them all
-# (32 members x 135k rows x 999 quantiles) would outgrow an 80 GB GPU.
 _PREDICT_ROWS = 2**15
 
 
@@ -100,7 +98,6 @@ class SeldonRegressor:
     ) -> None:
         if model.num_quantiles <= 0:
             raise ValueError("SeldonRegressor runs a regressor; the model is a classifier")
-        # Below 0 the clamp would cut into the target's range; below -0.5 its bounds would cross.
         if clip_margin is not None and clip_margin < 0:
             raise ValueError(f"clip_margin must be None or at least 0, got {clip_margin}")
         if device is None:
@@ -127,13 +124,14 @@ class SeldonRegressor:
     ) -> SeldonRegressor:
         """The regressor of a saved model: a released model's name, ``"seldon"`` or ``"seldon-mini"``, or what ``Seldon.from_pretrained`` takes (a local directory, a checkpoint name such as ``"seldon-mini-regressor"``, a Hub repository); ``kwargs`` are the constructor's.
 
-        A released model's name also takes the settings of its packaged
-        regression config (``configs/<name>-regressor.yaml``: n_estimators,
-        clip_margin, recipe, ...), which ``kwargs`` override; anything else
-        takes the constructor's defaults.
+        A released model's name, or its regression checkpoint's, also takes
+        the settings of its packaged regression config
+        (``configs/<model>-regressor.yaml``: n_estimators, clip_margin,
+        recipe, ...), which ``kwargs`` override; anything else takes the
+        constructor's defaults.
         """
-        # A model name is its regression checkpoint; a local directory of that name wins.
-        checkpoint = f"{name_or_path}-regressor"
+        name = str(name_or_path)
+        checkpoint = name if name.endswith("-regressor") else f"{name}-regressor"
         if subfolder is None and checkpoint in HUB_CHECKPOINTS and not Path(name_or_path).is_dir():
             settings = _read_config(_CONFIGS / f"{checkpoint}.yaml")
             settings.pop("checkpoint", None)
@@ -162,7 +160,6 @@ class SeldonRegressor:
         if y.shape not in ((len(X),), (len(X), 1)):
             raise ValueError(f"y must hold one target per row of X, {len(X)} rows; got {y.shape}")
         y = y.reshape(-1)
-        # One NaN would make every prediction NaN: the standardization and the bounds read them all.
         if not np.isfinite(y).all():
             raise ValueError("y holds NaN or infinite values")
         self._bounds = None

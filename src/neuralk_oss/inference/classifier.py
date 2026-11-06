@@ -31,7 +31,6 @@ from neuralk_oss.inference.recipe import SeldonRecipe
 from neuralk_oss.model import Seldon
 from neuralk_oss.model.seldon import HUB_CHECKPOINTS
 
-# Importable from here as before the regressor shared them.
 __all__ = ["MEMBER_BATCH_CELLS", "SeldonClassifier", "member_batch_size"]
 
 
@@ -118,14 +117,15 @@ class SeldonClassifier:
     ) -> SeldonClassifier:
         """The classifier of a saved model: a released model's name, ``"seldon"`` or ``"seldon-mini"``, or what ``Seldon.from_pretrained`` takes (a local directory, a checkpoint name such as ``"seldon-mini-classifier"``, a Hub repository); ``kwargs`` are the constructor's.
 
-        A released model's name also takes the settings of its packaged config
-        (``configs/<name>.yaml``: n_estimators, recipe, ...), which ``kwargs``
-        override; anything else takes the constructor's defaults.
+        A released model's name, or its classification checkpoint's, also
+        takes the settings of its packaged config (``configs/<model>.yaml``:
+        n_estimators, recipe, ...), which ``kwargs`` override; anything else
+        takes the constructor's defaults.
         """
-        # A model name is its classification checkpoint; a local directory of that name wins.
-        checkpoint = f"{name_or_path}-classifier"
+        model_name = str(name_or_path).removesuffix("-classifier")
+        checkpoint = f"{model_name}-classifier"
         if subfolder is None and checkpoint in HUB_CHECKPOINTS and not Path(name_or_path).is_dir():
-            settings = _read_config(_CONFIGS / f"{name_or_path}.yaml")
+            settings = _read_config(_CONFIGS / f"{model_name}.yaml")
             settings.pop("checkpoint", None)
             kwargs = {**settings, **kwargs}
             name_or_path = checkpoint
