@@ -86,6 +86,48 @@ by `clip_margin` times that range on each side; the constructor's default,
 with its packaged config, `seldon-regressor` or `seldon-mini-regressor`: half
 the members read categories in a shuffled order, and `clip_margin=0.1`.
 
+### Forecasting
+
+```python
+from neuralk_oss import SeldonForecaster
+
+fc = SeldonForecaster.from_pretrained("seldon-mini")  # or "seldon"
+# context_df: item_id (optional), timestamp, target, covariates
+out = fc.predict_df(context_df, prediction_length=24)  # or future_df=... with known covariates
+# indexed by (item_id, timestamp): target (the median), 0.1, ..., 0.9
+```
+
+`SeldonForecaster` runs the [TabPFN-TS](https://github.com/PriorLabs/tabpfn-time-series)
+pipeline (its features ported in `neuralk_oss.forecasting.features`) with
+Seldon's regressor in TabPFN's place. Each series becomes a table, one row
+per timestamp and its value the label, whose features are known before the
+forecast: lags {1, season} and a trailing mean of the known covariates, the
+row's running index, the year and the calendar fields' sin and cos, and sin
+and cos of the running index over the 12 strongest periods of the series'
+spectrum. The regressor is fit on each series' history and predicts the
+quantiles of its horizon; the target's past values are never features.
+
+Per series, context rows without a target are dropped (a series with at most
+one value has the others set to 0), and the latest `max_context_length`
+(32768) are kept. Nothing else is subsampled: a series whose context passes
+the regressor's `max_context_size`, or whose table passes the recipe's
+`max_features`, raises instead of being cut. A covariate with values on the
+horizon is a known one; a context column without is past-only, read as
+missing on the horizon. Quantile levels between the model's 999 are
+interpolated; `point_forecast="mean"` makes `target` the mean of the
+quantiles. The packaged configs `seldon-forecaster` and
+`seldon-mini-forecaster` take the regressors' settings without their clamp to
+the context's range (`clip_margin`), which would keep a trend inside it.
+
+`forecast` follows sdm's forecasting protocol (as its `KumoForecast`): the
+covariates `x_context`, the targets `y_context` (one or more, each forecast on
+its own) and the horizon `x_query`, on timestamps, return per target `t` the
+columns `t` and `t__q<100 x level>`:
+
+```python
+out = fc.forecast(x_context, y_context, x_query, quantiles=[0.1, 0.5, 0.9])
+```
+
 ### Preprocessing
 
 The preprocessing and ensembling come from structured-data-models (`sdm`,
@@ -136,7 +178,8 @@ config sets the checkpoint, the classifier and its recipe in one file:
 `SeldonRecipe`'s keyword arguments. Each released model's settings are a packaged config of its name,
 which `from_pretrained` loads: `seldon` and `seldon-mini` for the classifiers,
 `seldon-regressor` and `seldon-mini-regressor` for the regressors
-(`SeldonRegressor.from_config("seldon-regressor")`).
+(`SeldonRegressor.from_config("seldon-regressor")`), `seldon-forecaster` and
+`seldon-mini-forecaster` for the forecasters.
 
 ```yaml
 # seldon.yaml

@@ -18,6 +18,8 @@ dependencies = [
     "pydantic>=2",
     "pyyaml",
     "safetensors",
+    # The forecaster's seasonal-period detection (scipy.fft, scipy.signal.find_peaks).
+    "scipy",
     # Pinned: the preprocessing and ensembling Seldon was evaluated with.
     "structured-data-models==0.2.1",
     "torch>=2.7",

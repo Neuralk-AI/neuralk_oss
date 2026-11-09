@@ -153,8 +153,19 @@ class SeldonRegressor:
         params = _config_params(config, kwargs, "regression")
         return cls.from_pretrained(params.pop("checkpoint"), **params)
 
-    def fit(self, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> SeldonRegressor:
-        """Keep ``X`` and ``y`` as the context of every member; ``y`` is one finite number per row, ``(n_rows,)`` or ``(n_rows, 1)``."""
+    def fit(
+        self,
+        X: pd.DataFrame | np.ndarray,
+        y: pd.Series | np.ndarray,
+        *,
+        stypes: dict[str, str | sdm.Stype] | None = None,
+    ) -> SeldonRegressor:
+        """Keep ``X`` and ``y`` as the context of every member; ``y`` is one finite number per row, ``(n_rows,)`` or ``(n_rows, 1)``.
+
+        ``stypes`` sets the type of the columns it names (``"numerical"``,
+        ``"categorical"``), over sdm's inference, which reads a column of few
+        distinct numbers as categorical.
+        """
         X = _frame(X)
         y = np.asarray(y, dtype=float)
         if y.shape not in ((len(X),), (len(X), 1)):
@@ -167,6 +178,10 @@ class SeldonRegressor:
             low, high, m = float(np.min(y)), float(np.max(y)), self.clip_margin
             self._bounds = ((1 + m) * low - m * high, (1 + m) * high - m * low)
         self._stypes = sdm.infer_stypes(X, _low_cardinality="infer")
+        if stypes:
+            if unknown := sorted(set(stypes) - set(self._stypes)):
+                raise ValueError(f"stypes names columns X does not have: {unknown}")
+            self._stypes = {**self._stypes, **{k: sdm.Stype(v) for k, v in stypes.items()}}
         x_context = sdm.TableTensor.from_pandas(df=X, stypes=self._stypes)
         y_context = sdm.TableTensor.from_pandas(
             df=pd.DataFrame({_TARGET: y}), stypes={_TARGET: "numerical"}
