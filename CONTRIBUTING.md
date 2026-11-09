@@ -4,8 +4,9 @@
 
 ```
 src/neuralk_oss/
-├── model/       # Seldon's architecture, config and checkpoint format
-└── inference/   # sdm estimator, preprocessing recipe, scikit-learn style classifier and regressor
+├── model/        # Seldon's architecture, config and checkpoint format
+├── inference/    # sdm estimator, preprocessing recipe, scikit-learn style classifier and regressor
+└── forecasting/  # TabPFN-TS's time features and pipeline around the regressor
 tests/
 ```
 

@@ -263,3 +263,49 @@ def test_model_golden(name, device):
         tolerance("model", device),
         reference=device == "cpu",
     )
+
+
+def _series(rng, n=150, horizon=12):
+    """Two hourly series (a daily cycle, a trend, noise, missing values) with a known and a past-only covariate."""
+    frames = []
+    for item in ("a", "b"):
+        steps = np.arange(n + horizon)
+        frame = pd.DataFrame(
+            {
+                "item_id": item,
+                "timestamp": pd.date_range("2024-03-01", periods=n + horizon, freq="h"),
+                "target": 10.0
+                + np.sin(2 * np.pi * steps / 24)
+                + 0.01 * steps
+                + 0.2 * rng.normal(size=n + horizon),
+                "promo": (rng.random(n + horizon) < 0.2).astype(float),
+                "temp": rng.normal(size=n + horizon),
+            }
+        )
+        frame.loc[rng.random(n + horizon) < 0.05, "target"] = np.nan
+        frames.append(frame)
+    both = pd.concat(frames, ignore_index=True)
+    future = both.groupby("item_id").tail(horizon).drop(columns=["target", "temp"])
+    return both.drop(index=future.index), future
+
+
+# CPU only: a CUDA reference needs a CUDA machine to generate (see the module docstring).
+def test_forecaster_golden():
+    from neuralk_oss import SeldonForecaster
+
+    context, future = _series(np.random.default_rng(0))
+    regressor = SeldonRegressor(
+        checkpoint("seldon-tiny-regressor", "cpu"),
+        n_estimators=3,
+        device="cpu",
+        recipe=SeldonRecipe(cut_features=False),
+    )
+    out = SeldonForecaster(regressor).predict_df(
+        context, future_df=future, quantiles=[0.1, 0.5, 0.9]
+    )
+    check(
+        GOLDEN / "expected" / "forecaster-covariates.npy",
+        out[["target", 0.1, 0.5, 0.9]].to_numpy(dtype=np.float64),
+        tolerance("regressor", "cpu"),
+        reference=True,
+    )

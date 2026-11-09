@@ -5,7 +5,7 @@
 
 from neuralk_oss.inference.classifier import SeldonClassifier
 from neuralk_oss.inference.estimator import SeldonICL
-from neuralk_oss.inference.recipe import SeldonRecipe
+from neuralk_oss.inference.recipe import SeldonRecipe, TooManyFeatures
 from neuralk_oss.inference.regressor import SeldonRegressor
 
-__all__ = ["SeldonClassifier", "SeldonICL", "SeldonRecipe", "SeldonRegressor"]
+__all__ = ["SeldonClassifier", "SeldonICL", "SeldonRecipe", "SeldonRegressor", "TooManyFeatures"]

@@ -19,6 +19,11 @@ token: null              # prefer `hf auth login`: never commit a token
 # set it whatever the checkpoint.
 # clip_margin: null
 
+# --- The forecaster only (SeldonForecaster.from_config) ---
+# Commented out, as the classifier and the regressor reject them.
+# max_context_length: 32768  # context rows each series keeps, its latest; null: all
+# point_forecast: median     # the target column: median, or mean of the quantiles
+
 # --- The classifier or the regressor ---
 n_estimators: 8          # ensemble members
 device: null             # cuda when available, else cpu
@@ -48,6 +53,7 @@ recipe:
   average_logits: true     # classifier: average the members' logits, else their probabilities
   softmax_temperature: 1.0 # classifier: divisor of the logits before the softmax
   max_features: 500        # columns the model reads, cut after the shuffle
+  cut_features: true       # cut the columns past max_features; false: fit raises instead
   standardize_eps: 1.0e-6  # epsilon of the per-column standardization
   clip_value: 100.0        # bound of the standardized values, before the transform
   rank_gaussian_knots: 8192

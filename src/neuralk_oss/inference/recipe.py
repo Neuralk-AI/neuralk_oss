@@ -41,7 +41,12 @@ class SeldonRecipe:
     Attributes
     ----------
     max_features : int
-        Columns the model reads; more are cut after the column shuffle.
+        Columns the model reads; more are cut after the column shuffle, or
+        raise ``TooManyFeatures`` without ``cut_features``.
+    cut_features : bool
+        Whether a table of more than ``max_features`` columns, counted as the
+        model would read them (constant columns dropped, category counts
+        added), is cut to them; otherwise ``fit`` raises ``TooManyFeatures``.
     standardize_eps : float
         Epsilon of the per-column standardization.
     clip_value : float
@@ -82,6 +87,7 @@ class SeldonRecipe:
     """
 
     max_features = 500
+    cut_features = True
     standardize_eps = 1e-6
     clip_value = 100.0
     rank_gaussian_knots = 8192
@@ -120,7 +126,9 @@ class SeldonRecipe:
                 categorical=self.categorical_features(),
             ),
             *shuffle,
-            sp.SelectColumns(self.max_features, method="first"),
+            (sp.SelectColumns if self.cut_features else _SelectOrRaise)(
+                self.max_features, method="first"
+            ),
             sp.Cast(torch.float32),
         ]
 
@@ -178,6 +186,24 @@ class SeldonRecipe:
             classification=classification if self.average_logits else classification[::-1],
             regression=[sp.SortQuantiles(), sp.AverageEstimators(trim_fraction=0.2)],
         )
+
+
+class TooManyFeatures(ValueError):
+    """A table has more columns than the recipe's ``max_features``, which ``cut_features=False`` keeps from cutting."""
+
+
+class _SelectOrRaise(sp.SelectColumns):
+    """``SelectColumns`` that raises instead of cutting: it sees the columns the model would read, so the count is exact."""
+
+    # shortcut: overrides sdm's private hook and reads its private _iter_groups, pinned at 0.2.1; recheck on an sdm upgrade.
+    def _transform_ensemble(self, ensemble_table: EnsembleTable) -> EnsembleTable:
+        n = max(group.size(-1) for group in ensemble_table._iter_groups())
+        if n > self.max_columns:
+            raise TooManyFeatures(
+                f"{n} feature columns, past max_features ({self.max_columns}), which "
+                "cut_features=False keeps from cutting"
+            )
+        return ensemble_table
 
 
 class _HalfChoice(sp.Choice):

@@ -120,7 +120,7 @@ def _config_params(config: str | os.PathLike, kwargs: dict[str, Any], task: Task
     """The keys of a YAML config of ``task``, a packaged one by name or a file, with ``kwargs`` over them; they must name a ``checkpoint``.
 
     A packaged regression config's name ends with ``-regressor``; ``template``
-    serves both tasks.
+    serves both tasks; a ``-forecaster`` config is ``SeldonForecaster``'s.
     """
     path = Path(config)
     if path.suffix not in (".yaml", ".yml") and path.parent == Path():
@@ -128,7 +128,10 @@ def _config_params(config: str | os.PathLike, kwargs: dict[str, Any], task: Task
             name
             for p in _CONFIGS.iterdir()
             if (name := p.name.removesuffix(".yaml")) == "template"
-            or name.endswith("-regressor") == (task == "regression")
+            or (
+                not name.endswith("-forecaster")
+                and name.endswith("-regressor") == (task == "regression")
+            )
         )
         if str(config) not in names:
             raise ValueError(
