@@ -295,7 +295,10 @@ def test_forecaster_golden():
 
     context, future = _series(np.random.default_rng(0))
     regressor = SeldonRegressor(
-        checkpoint("seldon-tiny-regressor", "cpu"), n_estimators=3, device="cpu"
+        checkpoint("seldon-tiny-regressor", "cpu"),
+        n_estimators=3,
+        device="cpu",
+        recipe=SeldonRecipe(cut_features=False),
     )
     out = SeldonForecaster(regressor).predict_df(
         context, future_df=future, quantiles=[0.1, 0.5, 0.9]

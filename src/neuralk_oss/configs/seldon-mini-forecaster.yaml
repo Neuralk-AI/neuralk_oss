@@ -12,3 +12,4 @@ max_context_length: 32768  # context rows each series keeps, its latest (TabPFN-
 point_forecast: median
 recipe:  # SeldonRecipe's keyword arguments
   half_shuffle: true
+  cut_features: false  # past max_features, raise instead of cutting columns

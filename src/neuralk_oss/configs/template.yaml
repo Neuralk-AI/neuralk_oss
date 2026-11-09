@@ -53,6 +53,7 @@ recipe:
   average_logits: true     # classifier: average the members' logits, else their probabilities
   softmax_temperature: 1.0 # classifier: divisor of the logits before the softmax
   max_features: 500        # columns the model reads, cut after the shuffle
+  cut_features: true       # cut the columns past max_features; false: fit raises instead
   standardize_eps: 1.0e-6  # epsilon of the per-column standardization
   clip_value: 100.0        # bound of the standardized values, before the transform
   rank_gaussian_knots: 8192

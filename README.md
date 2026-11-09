@@ -111,7 +111,7 @@ Per series, context rows without a target are dropped (a series with at most
 one value has the others set to 0), and the latest `max_context_length`
 (32768) are kept. Nothing else is subsampled: a series whose context passes
 the regressor's `max_context_size`, or whose table passes the recipe's
-`max_features`, raises instead of being cut. A covariate with values on the
+`max_features` (`cut_features=False`, required), raises instead of being cut. A covariate with values on the
 horizon is a known one; a context column without is past-only, read as
 missing on the horizon. Quantile levels between the model's 999 are
 interpolated; `point_forecast="mean"` makes `target` the mean of the
@@ -151,6 +151,7 @@ clf = SeldonClassifier.from_pretrained("seldon-mini", recipe=recipe)
 | `average_logits` | `True` | average the members' logits, else their probabilities |
 | `softmax_temperature` | `1.0` | divisor of the logits before the softmax |
 | `max_features` | `500` | columns the model reads, cut after the shuffle |
+| `cut_features` | `True` | cut the columns past `max_features`; `False`: `fit` raises `TooManyFeatures` instead (the forecaster's configs) |
 
 The rest (clipping bounds, rank-Gaussian knots, category counts) is in
 `SeldonRecipe`'s docstring. Beyond parameters, each step is an overridable method:

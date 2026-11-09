@@ -16,7 +16,6 @@ from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
-import sdm
 import torch
 
 from neuralk_oss.forecasting.features import (
@@ -28,6 +27,7 @@ from neuralk_oss.forecasting.features import (
     featurize,
 )
 from neuralk_oss.inference._inference import _CONFIGS, _read_config
+from neuralk_oss.inference.recipe import TooManyFeatures
 from neuralk_oss.inference.regressor import SeldonRegressor
 from neuralk_oss.model.seldon import HUB_CHECKPOINTS
 
@@ -62,14 +62,16 @@ class SeldonForecaster:
     Nothing is subsampled: every kept context row is in every member's
     context, and every feature column is read. A series whose context
     passes the regressor's ``max_context_size`` (where it would give each
-    member a random subset) or whose table passes the recipe's
-    ``max_features`` (where columns would be cut) raises instead.
+    member a random subset) raises instead; so does a table past the
+    recipe's ``max_features``, which must be set not to cut
+    (``SeldonRecipe(cut_features=False)``, as the packaged configs do).
 
     Parameters
     ----------
     regressor : SeldonRegressor
-        The regressor fit on each series; its ``clip_margin`` should be None,
-        or a trend could not leave the context's range.
+        The regressor fit on each series; its recipe must have
+        ``cut_features=False``. Its ``clip_margin`` should be None, or a trend
+        could not leave the context's range.
     max_context_length : int or None, default=32768
         Context rows each series keeps, its latest; None keeps them all.
     temporal_features : sequence of FeatureGenerator, optional
@@ -99,6 +101,11 @@ class SeldonForecaster:
                 f"max_context_length ({max_context_length}) passes the regressor's "
                 f"max_context_size ({regressor.max_context_size}), past which each member "
                 "would read a random subset of the context: raise max_context_size"
+            )
+        if regressor.estimator.recipe.cut_features:
+            raise ValueError(
+                "the regressor's recipe cuts the columns past max_features: give it "
+                "SeldonRecipe(cut_features=False, ...), as the packaged forecaster configs do"
             )
         if point_forecast not in ("median", "mean"):
             raise ValueError(f"point_forecast must be 'median' or 'mean', got {point_forecast!r}")
@@ -333,13 +340,17 @@ class SeldonForecaster:
         reg = self.regressor
         if len(X) > reg.max_context_size:
             raise ValueError(
-                f"series {item!r} keeps {len(X)} context rows, past the regressor's "
+                f"series {item} keeps {len(X)} context rows, past the regressor's "
                 f"max_context_size ({reg.max_context_size}), past which each member would read "
                 "a random subset: lower max_context_length or raise max_context_size"
             )
         stypes = {name: "numerical" for name in generated}
-        _check_feature_count(X, stypes, reg, item)
-        reg.fit(X, y, stypes=stypes)
+        try:
+            reg.fit(X, y, stypes=stypes)
+        except TooManyFeatures as error:
+            raise TooManyFeatures(
+                f"series {item}: {error}; raise max_features or pass fewer covariates"
+            ) from error
         assert not reg._subsampled, "the regressor subsampled the context"
         q = reg.predict_quantiles(X_test).astype(np.float64)
         point = q.mean(axis=1) if self.point_forecast == "mean" else _at_levels(q, [0.5])[:, 0]
@@ -369,34 +380,6 @@ def _at_levels(q: np.ndarray, levels: Sequence[float]) -> np.ndarray:
     high = np.minimum(low + 1, n - 1)
     weight = pos - low
     return q[:, low] * (1 - weight) + q[:, high] * weight
-
-
-def _check_feature_count(
-    X: pd.DataFrame, stypes: dict[str, str], reg: SeldonRegressor, item: Any
-) -> None:
-    """Raise if the recipe would cut some of ``X``'s columns (``max_features``): its non-constant columns, plus the category-count column of each categorical one with many categories."""
-    recipe = reg.estimator.recipe
-    types = {
-        **sdm.infer_stypes(X, _low_cardinality="infer"),
-        **{k: sdm.Stype(v) for k, v in stypes.items()},
-    }
-    count = 0
-    for name, stype in types.items():
-        column = X[name]
-        if column.nunique(dropna=False) <= 1:
-            continue  # dropped as constant
-        count += 1
-        if (
-            stype == sdm.Stype.categorical
-            and column.nunique() >= recipe.category_count_min_cardinality
-        ):
-            count += 1
-    if count > recipe.max_features:
-        raise ValueError(
-            f"series {item!r} has {count} feature columns, past the recipe's max_features "
-            f"({recipe.max_features}), which would cut some: raise max_features "
-            "(SeldonRecipe(max_features=...)) or pass fewer covariates"
-        )
 
 
 def _check_frame(frame: pd.DataFrame, name: str) -> pd.DataFrame:

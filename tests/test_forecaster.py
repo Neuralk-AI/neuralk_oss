@@ -17,6 +17,7 @@ import yaml
 from neuralk_oss import SeldonClassifier, SeldonForecaster, SeldonRecipe, SeldonRegressor
 from neuralk_oss.forecasting import features as F
 from neuralk_oss.forecasting.forecaster import DEFAULT_QUANTILES, _at_levels
+from neuralk_oss.inference import TooManyFeatures
 
 CONFIGS = Path(__file__).parents[1] / "src" / "neuralk_oss" / "configs"
 TINY = Path(__file__).parent / "golden" / "seldon-tiny-regressor"
@@ -61,6 +62,7 @@ def _forecaster(model, **kwargs):
     regressor_kwargs = {
         k: kwargs.pop(k) for k in ("max_context_size", "recipe", "clip_margin") if k in kwargs
     }
+    regressor_kwargs.setdefault("recipe", SeldonRecipe(cut_features=False))
     regressor = SeldonRegressor(model, n_estimators=2, device="cpu", **regressor_kwargs)
     return SeldonForecaster(regressor, **kwargs)
 
@@ -242,9 +244,36 @@ def test_no_subsampling_of_rows(tiny_regressor):
 
 
 def test_no_subsampling_of_columns(tiny_regressor):
-    forecaster = _forecaster(tiny_regressor, recipe=SeldonRecipe(max_features=10))
-    with pytest.raises(ValueError, match="max_features"):
-        forecaster.predict_df(_context(items=("a",)), prediction_length=HORIZON)
+    recipe = SeldonRecipe(max_features=10, cut_features=False)
+    forecaster = _forecaster(tiny_regressor, recipe=recipe)
+    with pytest.raises(TooManyFeatures, match="series 0: .* past max_features"):
+        forecaster.predict_df(
+            _context(items=("a",)).drop(columns="item_id"), prediction_length=HORIZON
+        )
+    # A recipe that cuts is refused up front.
+    with pytest.raises(ValueError, match="cut_features=False"):
+        _forecaster(tiny_regressor, recipe=SeldonRecipe())
+
+
+def test_recipe_raises_on_the_columns_the_model_reads(tiny_regressor):
+    # 12 columns, 4 of them constant: the recipe drops those before counting.
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame(rng.normal(size=(60, 8)), columns=[f"x{i}" for i in range(8)])
+    X[[f"c{i}" for i in range(4)]] = 1.0
+    y = rng.normal(size=60)
+    for max_features, raises in ((8, False), (7, True)):
+        recipe = SeldonRecipe(max_features=max_features, cut_features=False)
+        reg = SeldonRegressor(tiny_regressor, n_estimators=2, device="cpu", recipe=recipe)
+        if raises:
+            with pytest.raises(TooManyFeatures, match="8 feature columns"):
+                reg.fit(X, y)
+        else:
+            reg.fit(X, y)
+    # The default cuts, as before.
+    reg = SeldonRegressor(
+        tiny_regressor, n_estimators=2, device="cpu", recipe=SeldonRecipe(max_features=7)
+    )
+    assert reg.fit(X, y).predict(X[:3]).shape == (3,)
 
 
 def test_known_and_past_only_covariates(tiny_regressor):
@@ -350,6 +379,7 @@ def test_packaged_forecaster_configs(name):
         (CONFIGS / f"{name.replace('forecaster', 'regressor')}.yaml").read_text()
     )
     assert config["clip_margin"] is None and config["max_context_length"] == 32768
+    assert config["recipe"].pop("cut_features") is False
     assert config["max_context_length"] <= config["max_context_size"]
     # The regressor's settings otherwise.
     for key in ("checkpoint", "n_estimators", "recipe", "amp", "random_state"):
@@ -365,7 +395,8 @@ def test_from_config_file(tmp_path):
     path = tmp_path / "run.yaml"
     path.write_text(
         f"checkpoint: {TINY}\nn_estimators: 2\ndevice: cpu\nclip_margin: null\n"
-        "max_context_length: 64\npoint_forecast: mean\nrecipe:\n  half_shuffle: true\n"
+        "max_context_length: 64\npoint_forecast: mean\n"
+        "recipe:\n  half_shuffle: true\n  cut_features: false\n"
     )
     forecaster = SeldonForecaster.from_config(path)
     assert forecaster.max_context_length == 64 and forecaster.point_forecast == "mean"
