@@ -29,6 +29,7 @@ from neuralk_oss.forecasting.features import (
 from neuralk_oss.inference._inference import _CONFIGS, _read_config
 from neuralk_oss.inference.recipe import TooManyFeatures
 from neuralk_oss.inference.regressor import SeldonRegressor
+from neuralk_oss.model import Seldon
 from neuralk_oss.model.seldon import HUB_CHECKPOINTS
 
 # TabPFN-TS's DEFAULT_QUANTILE_CONFIG.
@@ -126,12 +127,15 @@ class SeldonForecaster:
         token: str | None = None,
         **kwargs: Any,
     ) -> SeldonForecaster:
-        """The forecaster of a saved regressor: a released model's name, ``"seldon"`` or ``"seldon-mini"``, or what ``SeldonRegressor.from_pretrained`` takes; ``kwargs`` are the constructor's and the regressor's.
+        """The forecaster of a saved regressor: a released model's name, ``"seldon"`` or ``"seldon-mini"``, or what ``Seldon.from_pretrained`` takes (a local directory, a checkpoint name such as ``"seldon-mini-regressor"``, a Hub repository); ``kwargs`` are the constructor's and ``SeldonRegressor``'s.
 
         A released model's name, or its regression checkpoint's, takes the
         settings of its packaged forecaster config
-        (``configs/<model>-forecaster.yaml``: the regressor's, ``clip_margin``
-        None, ``max_context_length``, ...), which ``kwargs`` override.
+        (``configs/<model>-forecaster.yaml``), which ``kwargs`` override. That
+        config is the only one read: the regressor's packaged config
+        (``<model>-regressor.yaml``) does not apply, so a key the forecaster
+        config leaves out takes the constructor's default. Anything else takes
+        the constructors' defaults.
         """
         name = str(name_or_path)
         model = name.removesuffix("-regressor")
@@ -143,10 +147,13 @@ class SeldonForecaster:
             settings = _read_config(_CONFIGS / f"{model}-forecaster.yaml")
             settings.pop("checkpoint", None)
             kwargs = {**settings, **kwargs}
+            name_or_path = f"{model}-regressor"
         own = {key: kwargs.pop(key) for key in _FORECASTER_KEYS if key in kwargs}
-        regressor = SeldonRegressor.from_pretrained(
-            name_or_path, subfolder=subfolder, revision=revision, token=token, **kwargs
+        # Not SeldonRegressor.from_pretrained, which would merge the regressor's packaged config under kwargs.
+        weights = Seldon.from_pretrained(
+            name_or_path, task="regression", subfolder=subfolder, revision=revision, token=token
         )
+        regressor = SeldonRegressor(weights, **kwargs)
         return cls(regressor, **own)
 
     @classmethod

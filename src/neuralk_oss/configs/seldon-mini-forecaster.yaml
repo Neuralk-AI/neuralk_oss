@@ -1,7 +1,9 @@
 # Seldon-Mini's forecaster: TabPFN-TS's time features (covariate lags, running
-# index, calendar, seasonal periods) read by Seldon-Mini's regressor, with its
-# regressor's settings (half_shuffle) but no clamp of the quantiles to the
-# context's range (clip_margin), which would keep a trend from leaving it.
+# index, calendar, seasonal periods) read by Seldon-Mini's regressor. This is
+# the only config SeldonForecaster.from_pretrained("seldon-mini") reads;
+# seldon-mini-regressor.yaml does not apply. It repeats the regressor's
+# settings, but does not clamp the quantiles to the context's range
+# (clip_margin), which would keep a trend from leaving it.
 checkpoint: seldon-mini
 n_estimators: 4
 max_context_size: 200000

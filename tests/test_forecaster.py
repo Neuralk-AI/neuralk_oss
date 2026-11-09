@@ -14,7 +14,13 @@ import pandas as pd
 import pytest
 import yaml
 
-from neuralk_oss import SeldonClassifier, SeldonForecaster, SeldonRecipe, SeldonRegressor
+from neuralk_oss import (
+    Seldon,
+    SeldonClassifier,
+    SeldonForecaster,
+    SeldonRecipe,
+    SeldonRegressor,
+)
 from neuralk_oss.forecasting import features as F
 from neuralk_oss.forecasting.forecaster import DEFAULT_QUANTILES, _at_levels
 from neuralk_oss.inference import TooManyFeatures
@@ -389,6 +395,32 @@ def test_packaged_forecaster_configs(name):
         SeldonClassifier.from_config(name)
     with pytest.raises(ValueError, match="unknown"):
         SeldonRegressor.from_config(name)
+
+
+@pytest.mark.parametrize("name", ["seldon-mini", "seldon-mini-regressor"])
+def test_from_pretrained_reads_only_the_forecaster_config(name, tiny_regressor, monkeypatch):
+    loaded = []
+
+    def fake_load(name_or_path, **kwargs):
+        loaded.append((str(name_or_path), kwargs["task"]))
+        return tiny_regressor
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("the regressor's packaged config was read")
+
+    monkeypatch.setattr(Seldon, "from_pretrained", fake_load)
+    monkeypatch.setattr(SeldonRegressor, "from_pretrained", refuse)
+    forecaster = SeldonForecaster.from_pretrained(name, device="cpu")
+    config = yaml.safe_load((CONFIGS / "seldon-mini-forecaster.yaml").read_text())
+    reg = forecaster.regressor
+    assert loaded == [("seldon-mini-regressor", "regression")]
+    assert reg.clip_margin is None and reg.n_estimators == config["n_estimators"]
+    assert reg.max_context_size == config["max_context_size"]
+    assert reg.estimator.recipe.half_shuffle and not reg.estimator.recipe.cut_features
+    assert forecaster.max_context_length == config["max_context_length"]
+    # Keyword arguments override the config.
+    forecaster = SeldonForecaster.from_pretrained(name, device="cpu", n_estimators=2)
+    assert forecaster.regressor.n_estimators == 2
 
 
 def test_from_config_file(tmp_path):
