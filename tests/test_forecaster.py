@@ -7,6 +7,7 @@ The feature tests pin each formula of tabpfn-time-series (commit 258a074) on
 values worked out by hand.
 """
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -259,6 +260,15 @@ def test_no_subsampling_of_columns(tiny_regressor):
     # A recipe that cuts is refused up front.
     with pytest.raises(ValueError, match="cut_features=False"):
         _forecaster(tiny_regressor, recipe=SeldonRecipe())
+
+
+def test_clip_margin_warns(tiny_regressor):
+    # The clamp would cap a trend at the context's range: allowed, but warned.
+    with pytest.warns(UserWarning, match="clip_margin"):
+        _forecaster(tiny_regressor, clip_margin=0.1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _forecaster(tiny_regressor)
 
 
 def test_recipe_raises_on_the_columns_the_model_reads(tiny_regressor):

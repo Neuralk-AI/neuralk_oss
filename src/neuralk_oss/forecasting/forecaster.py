@@ -72,7 +72,7 @@ class SeldonForecaster:
     regressor : SeldonRegressor
         The regressor fit on each series; its recipe must have
         ``cut_features=False``. Its ``clip_margin`` should be None, or a trend
-        could not leave the context's range.
+        could not leave the context's range; one set warns.
     max_context_length : int or None, default=32768
         Context rows each series keeps, its latest; None keeps them all.
     temporal_features : sequence of FeatureGenerator, optional
@@ -110,6 +110,15 @@ class SeldonForecaster:
             )
         if point_forecast not in ("median", "mean"):
             raise ValueError(f"point_forecast must be 'median' or 'mean', got {point_forecast!r}")
+        if regressor.clip_margin is not None:
+            # A warning, not an error: a bounded target may want the clamp.
+            warnings.warn(
+                f"the regressor's clip_margin ({regressor.clip_margin}) clamps the forecasts "
+                "to the context's range widened by that margin, so a trend past it is capped: "
+                "set clip_margin=None, as the packaged forecaster configs do",
+                UserWarning,
+                stacklevel=2,
+            )
         self.regressor = regressor
         self.max_context_length = max_context_length
         self.temporal_features = (
