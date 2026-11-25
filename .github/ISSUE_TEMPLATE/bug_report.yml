@@ -1,0 +1,71 @@
+name: Bug report
+description: Something fails or returns wrong results.
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happens, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Minimal reproducible example
+      description: The shortest code that shows the bug, with synthetic or public data.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Traceback
+      description: The full traceback or error output, if any.
+      render: shell
+  - type: input
+    id: neuralk-oss-version
+    attributes:
+      label: neuralk-oss version
+      description: '`python -c "import neuralk_oss; print(neuralk_oss.__version__)"`'
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      description: '`python --version`'
+    validations:
+      required: true
+  - type: input
+    id: torch-version
+    attributes:
+      label: torch version
+      description: '`python -c "import torch; print(torch.__version__)"`'
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: e.g. Ubuntu 24.04, macOS 15, Windows 11
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: CPU, or CUDA and the GPU model.
+      placeholder: e.g. CPU, CUDA (NVIDIA A100 80GB)
+    validations:
+      required: true
+  - type: dropdown
+    id: model
+    attributes:
+      label: Model
+      options:
+        - seldon
+        - seldon-mini
+        - other (say which in the description)
+    validations:
+      required: true

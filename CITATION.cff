@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it as below.
+type: software
+title: Neuralk OSS
+abstract: >-
+  Neuralk-AI open-source models: loading and inference. Seldon is a tabular
+  in-context-learning foundation model: fit keeps the training table as
+  context, and new rows are classified, or their target estimated, in one
+  forward pass, with no gradient step. Seldon's regressor also runs time-series
+  forecasting through the TabPFN-TS pipeline.
+authors:
+  - name: Neuralk-AI
+license: Apache-2.0
+repository-code: https://github.com/Neuralk-AI/neuralk_oss
+keywords:
+  - tabular foundation model
+  - in-context learning
+  - classification
+  - regression
+  - time-series forecasting

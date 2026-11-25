@@ -1,5 +1,8 @@
 # Contributing
 
+Follow the [code of conduct](CODE_OF_CONDUCT.md); report vulnerabilities as
+[SECURITY.md](SECURITY.md) says, not in public issues.
+
 ## Layout
 
 ```
