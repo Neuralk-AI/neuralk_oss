@@ -17,6 +17,7 @@ With [uv](https://docs.astral.sh/uv/):
 ```bash
 uv sync
 uv run pytest
+uv run pytest --cov=neuralk_oss --cov-report=term-missing  # with coverage
 uv run ruff check . && uv run ruff format --check .
 ```
 
