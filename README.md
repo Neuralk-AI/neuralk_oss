@@ -2,7 +2,7 @@
 
 # Neuralk OSS
 
-[![CI](https://github.com/Neuralk-AI/neuralk_oss/actions/workflows/ci.yml/badge.svg)](https://github.com/Neuralk-AI/neuralk_oss/actions/workflows/ci.yml) [![Codecov](https://codecov.io/gh/Neuralk-AI/neuralk_oss/graph/badge.svg)](https://codecov.io/gh/Neuralk-AI/neuralk_oss) [![PyPI](https://img.shields.io/pypi/v/neuralk-oss)](https://pypi.org/project/neuralk-oss/) [![Python](https://img.shields.io/pypi/pyversions/neuralk-oss)](https://pypi.org/project/neuralk-oss/) [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Neuralk--AI%2Fseldon-FFD21E?logo=huggingface)](https://huggingface.co/Neuralk-AI/seldon)
+[![CI](https://github.com/Neuralk-AI/neuralk_oss/actions/workflows/ci.yml/badge.svg)](https://github.com/Neuralk-AI/neuralk_oss/actions/workflows/ci.yml) [![Codecov](https://codecov.io/gh/Neuralk-AI/neuralk_oss/graph/badge.svg)](https://codecov.io/gh/Neuralk-AI/neuralk_oss) [![PyPI](https://img.shields.io/pypi/v/neuralk-oss)](https://pypi.org/project/neuralk-oss/) [![Python](https://img.shields.io/pypi/pyversions/neuralk-oss)](https://pypi.org/project/neuralk-oss/) [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Neuralk-AI/neuralk_oss/blob/main/LICENSE) [![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Neuralk--AI%2Fseldon-FFD21E?logo=huggingface)](https://huggingface.co/Neuralk-AI/seldon)
 
 Neuralk-AI open-source models.
 
