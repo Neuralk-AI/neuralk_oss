@@ -7,7 +7,8 @@ abstract: >-
   in-context-learning foundation model: fit keeps the training table as
   context, and new rows are classified, or their target estimated, in one
   forward pass, with no gradient step. Seldon's regressor also runs time-series
-  forecasting through the TabPFN-TS pipeline.
+  forecasting through the TabPFN-TS pipeline. The model weights, on Hugging
+  Face, come under their own license, the Seldon Model License Agreement.
 authors:
   - name: Neuralk-AI
 license: Apache-2.0
