@@ -223,4 +223,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md): layout, development and versions.
 
 ## License
 
-[Apache 2.0](LICENSE).
+The code is under [Apache 2.0](LICENSE). The weights, in the Hugging Face
+repositories, come under their own license, the Seldon Model License Agreement
+([`seldon`](https://huggingface.co/Neuralk-AI/seldon/blob/main/LICENSE.md),
+[`seldon-mini`](https://huggingface.co/Neuralk-AI/seldon-mini/blob/main/LICENSE.md)).
