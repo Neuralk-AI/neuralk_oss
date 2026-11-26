@@ -129,18 +129,6 @@ class CalendarFeature(FeatureGenerator):
         return df
 
 
-class AdditionalCalendarFeature(CalendarFeature):
-    """``CalendarFeature`` with more fields, ``additional_seasonal_features``, before the default ones."""
-
-    def __init__(
-        self,
-        components: Sequence[str] | None = None,
-        additional_seasonal_features: dict[str, list[float] | None] | None = None,
-    ) -> None:
-        super().__init__(components=components)
-        self.seasonal_features = {**(additional_seasonal_features or {}), **self.seasonal_features}
-
-
 class PeriodicSinCosineFeature(FeatureGenerator):
     """``sin_<suffix>``, ``cos_<suffix>``: sin and cos over each of ``periods`` of the row's position in the whole frame (not per series, as TabPFN-TS)."""
 

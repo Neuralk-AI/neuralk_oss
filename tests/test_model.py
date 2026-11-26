@@ -282,12 +282,6 @@ def test_repeated_kv_heads_match_native_grouped_query(monkeypatch):
     torch.testing.assert_close(model(X, y, ts, categorical_mask=mask), native)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=RuntimeError,
-    reason="predict_query on 0 rows: the row stage's attention reshapes an empty tensor with -1 "
-    "before ICLearning's empty-query branch is reached (the estimators return early)",
-)
 @torch.no_grad()
 def test_no_query_rows(tiny_model):
     X, y, ts, mask = _table()

@@ -193,20 +193,12 @@ def _frame(n=4, items=("a",)):
     return pd.DataFrame({"target": np.arange(len(index), dtype=float)}, index=index)
 
 
-def test_calendar_feature_raw_index_and_additional_fields():
+def test_calendar_feature_raw_index():
     frame = _frame()  # 2024-01-01 is a Monday
     out = F.CalendarFeature(components=["month"], seasonal_features={"day_of_week": None})(frame)
     # A field without periods is its raw zero-based index, no sin or cos.
     assert out["day_of_week"].tolist() == [0, 1, 2, 3] and out["month"].tolist() == [1] * 4
     assert "day_of_week_sin" not in out and "year" not in out
-    # Every field of _CALENDAR_INDEX is a default one, and the defaults win a shared key
-    # (as TabPFN-TS): the additional fields only move their columns first; another name has no index.
-    extra = F.AdditionalCalendarFeature(additional_seasonal_features={"day_of_month": None})
-    out, default = extra(frame), F.CalendarFeature()(frame)
-    assert list(out.columns[2:4]) == ["day_of_month_sin", "day_of_month_cos"]
-    pd.testing.assert_frame_equal(out[default.columns], default)
-    with pytest.raises(KeyError, match="quarter_of_year"):
-        F.AdditionalCalendarFeature(additional_seasonal_features={"quarter_of_year": [4]})(frame)
 
 
 def test_periodic_sin_cosine_counts_rows_over_the_whole_frame():
