@@ -4,6 +4,9 @@
 
 Neuralk-AI open-source models.
 
+> [!NOTE]
+> This code is maintained by Neuralk on a sporadic, best-effort basis, not as a priority.
+
 ## Seldon
 
 Seldon is a tabular in-context-learning foundation model: `fit` keeps the
