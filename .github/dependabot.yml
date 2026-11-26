@@ -1,0 +1,13 @@
+# Opens a monthly PR bumping the pinned GitHub Actions (SHA and version comment),
+# all in one. A release must be a week old before it is proposed.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
