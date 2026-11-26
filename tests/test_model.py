@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import warnings
 
 import pytest
 import torch
@@ -9,8 +10,9 @@ from huggingface_hub.errors import EntryNotFoundError
 from safetensors.torch import save_file
 
 from neuralk_oss import Seldon
-from neuralk_oss.model import seldon
-from tests.conftest import tiny_config
+from neuralk_oss.model import attention, row, seldon
+from neuralk_oss.model.attention import MultiheadAttention
+from tests.conftest import _random_model, tiny_config
 
 
 def _table(B=2, T=40, H=5, train_size=30, classes=3):
@@ -213,3 +215,114 @@ def test_split_fits_free_memory(monkeypatch):
     assert seldon._split(100, 1, cuda) == 25
     monkeypatch.setattr(torch.cuda, "mem_get_info", lambda device: (1000, 0))
     assert seldon._split(100, 1, cuda) == 100
+
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"col": {"nhead": 3}}, "col.nhead=3 does not divide the stage width 16"),
+        ({"icl": {"nhead": 5}}, "icl.nhead=5 does not divide the stage width 24"),
+        ({"row": {"num_blocks": 1}}, "col.num_blocks=2, row.num_blocks=1"),
+        # embed_dim 16 over 16 heads: a head width of 1, which RoPE cannot halve.
+        ({"row": {"nhead": 16}}, "head width must be even"),
+        ({"num_icl_key_value_heads_for_query": 3}, "=3 does not divide icl.nhead=4"),
+    ],
+)
+def test_config_checks(overrides, message):
+    base = tiny_config().model_dump()
+    overrides = {k: {**base[k], **v} if isinstance(v, dict) else v for k, v in overrides.items()}
+    with pytest.raises(ValueError, match=message):
+        tiny_config(**overrides)
+
+
+def test_block_config_stages():
+    assert Seldon.block_config(tiny_config(), "icl").d_model == 24
+    with pytest.raises(ValueError, match="unknown stage 'head'"):
+        Seldon.block_config(tiny_config(), "head")
+
+
+def test_attention_key_value_shapes():
+    attn = MultiheadAttention(16, 2)
+    with pytest.raises(ValueError, match="does not match value shape"):
+        attn(torch.zeros(1, 3, 16), torch.zeros(1, 4, 16), torch.zeros(1, 5, 16))
+
+
+@torch.no_grad()
+def test_cpu_autocast_close_to_fp32(tiny_model):
+    X, y, ts, mask = _table()
+    out = tiny_model(X, y, ts, categorical_mask=mask)
+    with warnings.catch_warnings():
+        # PyTorch's rms_norm on bfloat16 inputs with fp32 weights: not fused, correct.
+        warnings.filterwarnings("ignore", "Mismatch dtype between input and weight")
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            low = tiny_model(X, y, ts, categorical_mask=mask)
+    # fp32_head: the logits stay fp32; bfloat16 keeps about 3 digits.
+    assert low.dtype == torch.float32
+    torch.testing.assert_close(low, out, rtol=0, atol=0.05)
+
+
+@torch.no_grad()
+def test_sliced_attention_matches_one_pass(tiny_model, monkeypatch):
+    X, y, ts, mask = _table()
+    whole = tiny_model(X, y, ts, categorical_mask=mask)
+    # SDPA in slices of 3 sequences, row blocks over slices of 7 rows.
+    monkeypatch.setattr(attention, "FLASH_MAX_SEQUENCES", 3)
+    monkeypatch.setattr(row, "ROW_BLOCK_MAX_SEQUENCES", 14)
+    sliced = tiny_model(X, y, ts, categorical_mask=mask)
+    torch.testing.assert_close(sliced, whole, rtol=1e-5, atol=1e-5)
+
+
+@torch.no_grad()
+def test_repeated_kv_heads_match_native_grouped_query(monkeypatch):
+    model = _random_model(tiny_config(num_icl_key_value_heads_for_query=2))
+    X, y, ts, mask = _table()
+    native = model(X, y, ts, categorical_mask=mask)
+    # As on CUDA without FlashAttention: k and v repeated to every query head.
+    monkeypatch.setattr(MultiheadAttention, "_native_gqa", staticmethod(lambda q, k, v: False))
+    torch.testing.assert_close(model(X, y, ts, categorical_mask=mask), native)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=RuntimeError,
+    reason="predict_query on 0 rows: the row stage's attention reshapes an empty tensor with -1 "
+    "before ICLearning's empty-query branch is reached (the estimators return early)",
+)
+@torch.no_grad()
+def test_no_query_rows(tiny_model):
+    X, y, ts, mask = _table()
+    context = tiny_model.encode_context(X[:, :ts], y, mask)
+    assert tiny_model.predict_query(X[:, :0], context, mask).shape == (2, 0, 10)
+
+
+@torch.no_grad()
+def test_default_mask_is_all_numerical(tiny_model):
+    X, y, ts, _ = _table()
+    torch.testing.assert_close(
+        tiny_model(X, y, ts), tiny_model(X, y, ts, categorical_mask=torch.zeros(2, 5, dtype=bool))
+    )
+
+
+def test_checkpoint_version_and_names(tmp_path, monkeypatch):
+    model = _tiny_pair()["seldon-tiny-classifier"]
+    model.save_pretrained(tmp_path / "old")
+    config = json.loads((tmp_path / "old" / "config.json").read_text())
+    (tmp_path / "old" / "config.json").write_text(json.dumps({**config, "model_version": "0.0"}))
+    with pytest.raises(
+        ValueError, match=f"checkpoint of Seldon 0.0, this is Seldon {Seldon.VERSION}"
+    ):
+        Seldon.from_pretrained(tmp_path / "old")
+    # A checkpoint name whose repository holds a single checkpoint, or not that one.
+    model.save_pretrained(tmp_path / "org" / "single")
+    _save_checkpoints(tmp_path / "org" / "pair", {"other": model})
+    monkeypatch.setattr(
+        seldon, "hf_hub_download", lambda repo_id, filename, **_: str(tmp_path / repo_id / filename)
+    )
+    monkeypatch.setitem(seldon.HUB_CHECKPOINTS, "seldon-a", "org/single")
+    monkeypatch.setitem(seldon.HUB_CHECKPOINTS, "seldon-b", "org/pair")
+    with pytest.raises(
+        FileNotFoundError, match="org/single holds a single checkpoint, not 'seldon-a'"
+    ):
+        Seldon.from_pretrained("seldon-a")
+    with pytest.raises(FileNotFoundError, match="org/pair holds no checkpoint 'seldon-b': other"):
+        Seldon.from_pretrained("seldon-b")

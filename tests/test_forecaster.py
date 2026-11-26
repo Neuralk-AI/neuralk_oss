@@ -175,6 +175,148 @@ def test_featurize_refuses_horizon_targets():
     future = _indexed(_future(_context(n=20, items=("a",)), promo=False)).assign(target=1.0)
     with pytest.raises(ValueError, match="horizon"):
         F.featurize(context, future, F.default_features())
+    with pytest.raises(ValueError, match="Target column 'target' not found"):
+        F.featurize(context.drop(columns="target"), future, F.default_features())
+
+
+def test_featurize_integer_target():
+    context = _indexed(_context(n=10, items=("a",))).assign(target=np.arange(10))
+    future = _indexed(_future(_context(n=10, items=("a",)), promo=False)).assign(target=np.nan)
+    train, test, _ = F.featurize(context, future, [F.RunningIndexFeature()])
+    # The horizon's NaN targets need a float column: the context's integers are read as floats.
+    assert train["target"].tolist() == list(range(10)) and test["target"].isna().all()
+
+
+def _frame(n=4, items=("a",)):
+    stamps = pd.date_range("2024-01-01", periods=n, freq="D")
+    index = pd.MultiIndex.from_product([items, stamps], names=["item_id", "timestamp"])
+    return pd.DataFrame({"target": np.arange(len(index), dtype=float)}, index=index)
+
+
+def test_calendar_feature_raw_index_and_additional_fields():
+    frame = _frame()  # 2024-01-01 is a Monday
+    out = F.CalendarFeature(components=["month"], seasonal_features={"day_of_week": None})(frame)
+    # A field without periods is its raw zero-based index, no sin or cos.
+    assert out["day_of_week"].tolist() == [0, 1, 2, 3] and out["month"].tolist() == [1] * 4
+    assert "day_of_week_sin" not in out and "year" not in out
+    # Every field of _CALENDAR_INDEX is a default one, and the defaults win a shared key
+    # (as TabPFN-TS): the additional fields only move their columns first; another name has no index.
+    extra = F.AdditionalCalendarFeature(additional_seasonal_features={"day_of_month": None})
+    out, default = extra(frame), F.CalendarFeature()(frame)
+    assert list(out.columns[2:4]) == ["day_of_month_sin", "day_of_month_cos"]
+    pd.testing.assert_frame_equal(out[default.columns], default)
+    with pytest.raises(KeyError, match="quarter_of_year"):
+        F.AdditionalCalendarFeature(additional_seasonal_features={"quarter_of_year": [4]})(frame)
+
+
+def test_periodic_sin_cosine_counts_rows_over_the_whole_frame():
+    frame = _frame(n=3, items=("a", "b"))
+    out = F.PeriodicSinCosineFeature([4, 6])(frame)
+    # Series b starts at row 3, not 0 (TabPFN-TS's quirk).
+    np.testing.assert_allclose(out["sin_4"], np.sin(2 * np.pi * np.arange(6) / 4))
+    np.testing.assert_allclose(out["cos_6"], np.cos(2 * np.pi * np.arange(6) / 6))
+    named = F.PeriodicSinCosineFeature([4, 6], name_suffix="p")(frame)
+    assert [c for c in named.columns if c != "target"] == [
+        "sin_p_0",
+        "cos_p_0",
+        "sin_p_1",
+        "cos_p_1",
+    ]
+    empty = F.PeriodicSinCosineFeature([])(frame)
+    pd.testing.assert_frame_equal(empty, frame)
+    assert empty is not frame
+
+
+def test_auto_seasonal_feature_config(caplog):
+    with pytest.raises(ValueError, match=r"no option \['max_top'\]"):
+        F.AutoSeasonalFeature({"max_top": 3})
+    # Out-of-range values are logged and replaced, as TabPFN-TS.
+    with caplog.at_level("WARNING", logger=F.__name__):
+        feature = F.AutoSeasonalFeature(
+            {"max_top_k": 0, "zero_padding_factor": 0, "detrend_type": "cubic"}
+        )
+    assert feature.config["max_top_k"] == 1 and feature.config["zero_padding_factor"] == 1
+    assert feature.config["detrend_type"] == "linear"
+    assert len(caplog.records) == 3 and "cubic" in caplog.text
+    assert repr(feature).startswith("AutoSeasonalFeature_{'config': {'max_top_k': 1")
+    out = feature(_indexed(_context(n=48, items=("a",))))
+    assert {"sin_#0", "cos_#0"} <= set(out.columns) and "sin_#1" not in out
+
+
+def _two_periods(n=480):
+    steps = np.arange(n)
+    return np.sin(2 * np.pi * steps / 24) + 0.5 * np.sin(2 * np.pi * steps / 8)
+
+
+@pytest.mark.parametrize(
+    "options, periods",
+    [
+        ({}, [24, 8]),
+        # Without padding the bins are coarser; the periods fall on bins either way.
+        ({"zero_padding_factor": 1}, [24, 8]),
+        ({"detrend_type": "constant"}, [24, 8]),
+        # First differences weigh a frequency by itself: the shorter period comes first.
+        ({"detrend_type": "first_diff"}, [8, 24]),
+        # An absolute threshold, in units of the spectrum: only the strongest peak passes 70.
+        ({"magnitude_threshold": 70.0, "relative_threshold": False}, [24]),
+        # Every bin over the threshold, not only peaks: a peak's neighbours leak in.
+        ({"use_peaks_only": False}, [24, 23, 25, 8, 26, 22]),
+    ],
+)
+def test_find_seasonal_periods_options(options, periods):
+    config = {**F.AutoSeasonalFeature.DEFAULTS, **options}
+    assert [p for p, _ in F.find_seasonal_periods(_two_periods(), **config)] == periods
+
+
+def test_find_seasonal_periods_without_threshold():
+    config = {**F.AutoSeasonalFeature.DEFAULTS, "magnitude_threshold": None}
+    found = [p for p, _ in F.find_seasonal_periods(_two_periods(), **config)]
+    # Every peak, the window's side lobes and its length among them, the strongest first.
+    assert found[:3] == [24, 8, 480] and len(found) > 3
+
+
+def test_detrend():
+    x = np.array([1.0, 3.0, 6.0])
+    np.testing.assert_allclose(F.detrend(x, "first_diff"), [0.0, 2.0, 3.0])
+    np.testing.assert_allclose(F.detrend(x, "constant"), x - x.mean())
+    np.testing.assert_allclose(F.detrend(2.0 * np.arange(5) + 1.0, "linear"), 0.0, atol=1e-12)
+    with pytest.raises(ValueError, match="Invalid detrend method: cubic"):
+        F.detrend(x, "cubic")
+
+
+@pytest.mark.parametrize(
+    "freq, dropped, season",
+    [
+        # Gaps leave pandas no frequency: the most common step, snapped to calendar months and quarters.
+        ("MS", [5, 11], 12),
+        ("QS", [5], 4),
+        ("D", [3], 7),
+    ],
+)
+def test_covariate_season_from_the_most_common_step(freq, dropped, season):
+    stamps = pd.date_range("2020-01-01", periods=24, freq=freq).delete(dropped)
+    index = pd.MultiIndex.from_arrays([["a"] * len(stamps), stamps], names=["item_id", "timestamp"])
+    frame = pd.DataFrame({"target": 1.0, "promo": np.arange(len(stamps), dtype=float)}, index)
+    out = F.KnownCovariateLagFeature()(frame)
+    assert {f"promo_lag_{season}", f"promo_mean_{season}"} <= set(out.columns)
+
+
+def test_covariate_lag_columns_and_season():
+    # One timestamp per series: no step to read, season 4.
+    frame = _frame(n=1, items=("a", "b")).assign(promo=1.0, temp=2.0)
+    assert "promo_lag_4" in F.KnownCovariateLagFeature()(frame)
+    frame = _frame(n=6).assign(promo=np.arange(6.0), temp=2.0)
+    # Named columns (an absent one skipped) and season.
+    out = F.KnownCovariateLagFeature(columns=["promo", "absent"], season=3)(frame)
+    assert [c for c in out.columns if c not in frame] == [
+        "promo_lag_1",
+        "promo_lag_3",
+        "promo_mean_3",
+    ]
+    np.testing.assert_allclose(out["promo_lag_3"], [np.nan, np.nan, np.nan, 0, 1, 2])
+    np.testing.assert_allclose(out["promo_mean_3"], [0, 0.5, 1, 2, 3, 4])
+    # No covariate: the frame as it is.
+    pd.testing.assert_frame_equal(F.KnownCovariateLagFeature()(_frame()), _frame())
 
 
 # --- Forecaster ------------------------------------------------------------------
@@ -334,6 +476,44 @@ def test_predict_df_input_checks(tiny_regressor):
         forecaster.predict_df(context, future_df=future)
     with pytest.raises(ValueError, match="quantiles"):
         forecaster.predict_df(context, prediction_length=3, quantiles=[1.5])
+    with pytest.raises(ValueError, match="prediction_length must be at least 1, got 0"):
+        forecaster.predict_df(context, prediction_length=0)
+    with pytest.raises(ValueError, match="no 'timestamp' column"):
+        forecaster.predict_df(context.drop(columns="timestamp"), prediction_length=3)
+    with pytest.raises(ValueError, match="every 'target' must be NaN"):
+        forecaster.predict_df(context, future_df=_future(context).assign(target=1.0))
+    indexed, future = _indexed(context), _indexed(_future(context))
+    with pytest.raises(ValueError, match=r"context must be indexed by \('item_id', 'timestamp'\)"):
+        forecaster.predict(indexed.reset_index(level="item_id"), future)
+    with pytest.raises(ValueError, match="context has no 'target' column"):
+        forecaster.predict(indexed.drop(columns="target"), future)
+
+
+def test_predict_reads_string_timestamps(tiny_regressor):
+    forecaster = _forecaster(tiny_regressor)
+    context = _indexed(_context(n=48, items=("a",)))
+    future = _indexed(_future(_context(n=48, items=("a",)), promo=False))
+    as_text = context.set_axis(
+        pd.MultiIndex.from_arrays(
+            [context.index.get_level_values(0), context.index.get_level_values(1).astype(str)],
+            names=context.index.names,
+        )
+    )
+    pd.testing.assert_frame_equal(
+        forecaster.predict(as_text, future), forecaster.predict(context, future)
+    )
+
+
+def test_constructor_checks(tiny_regressor):
+    regressor = _forecaster(tiny_regressor).regressor
+    with pytest.raises(TypeError, match="must be a SeldonRegressor, got Seldon"):
+        SeldonForecaster(tiny_regressor)
+    with pytest.raises(ValueError, match="max_context_length must be None or at least 1, got 0"):
+        SeldonForecaster(regressor, max_context_length=0)
+    with pytest.raises(ValueError, match="point_forecast must be 'median' or 'mean', got 'mode'"):
+        SeldonForecaster(regressor, point_forecast="mode")
+    forecaster = SeldonForecaster(regressor)
+    assert forecaster.to("cpu") is forecaster and forecaster.regressor.device.type == "cpu"
 
 
 def test_unsorted_context_is_sorted_per_series(tiny_regressor):
@@ -372,6 +552,28 @@ def test_forecast_protocol(tiny_regressor):
     pd.testing.assert_frame_equal(out[alone.columns], alone)
     with pytest.raises(ValueError, match="share a column name"):
         forecaster.forecast(x, y, query, quantiles=[0.101, 0.102])
+
+
+def test_forecast_protocol_inputs(tiny_regressor):
+    forecaster = _forecaster(tiny_regressor)
+    context = _context(n=48, items=("a",), covariates=True).set_index("timestamp")
+    stamps = _indexed(_future(_context(n=48, items=("a",)))).loc["a"].index
+    # A Series is one target, named after it (``target`` unnamed); a DatetimeIndex is the horizon.
+    out = forecaster.forecast(None, context["target"].rename(None), stamps, quantiles=[0.5])
+    assert list(out.columns) == ["target", "target__q50"] and out.index.equals(stamps)
+    y = context[["target"]]
+    x = context[["promo"]]
+    query = pd.DataFrame({"promo": 1.0}, index=stamps)
+    checks = [
+        ((x, y.reset_index(drop=True), query), "y_context must be indexed by timestamps"),
+        ((x, y, query.reset_index(drop=True)), "x_query must be indexed by timestamps"),
+        ((x[1:], y, query), "x_context and y_context must share their index"),
+        ((x, y, query.assign(temp=0.0)), r"x_query has columns x_context does not: \['temp'\]"),
+        ((x.assign(target=0.0), y, query), r"x_context columns named like a target: \['target'\]"),
+    ]
+    for args, message in checks:
+        with pytest.raises(ValueError, match=message):
+            forecaster.forecast(*args)
 
 
 def test_at_levels():
@@ -448,6 +650,22 @@ def test_from_config_file(tmp_path):
     assert len(out) == 3
     with pytest.raises(ValueError, match="unknown forecaster config"):
         SeldonForecaster.from_config("seldon")
+    path.write_text("n_estimators: 2\n")
+    with pytest.raises(ValueError, match="names no checkpoint"):
+        SeldonForecaster.from_config(path)
+
+
+def test_from_config_packaged_name(tiny_regressor, monkeypatch):
+    loaded = []
+    monkeypatch.setattr(
+        Seldon, "from_pretrained", lambda name, **kwargs: loaded.append(name) or tiny_regressor
+    )
+    forecaster = SeldonForecaster.from_config("seldon-forecaster", device="cpu", n_estimators=2)
+    config = yaml.safe_load((CONFIGS / "seldon-forecaster.yaml").read_text())
+    # The config's "seldon" names the regression checkpoint, as from_pretrained's names do.
+    assert config["checkpoint"] == "seldon" and loaded == ["seldon-regressor"]
+    assert forecaster.max_context_length == config["max_context_length"]
+    assert forecaster.regressor.n_estimators == 2  # a keyword argument over the config
 
 
 def test_regressor_stypes_override(tiny_regressor):
