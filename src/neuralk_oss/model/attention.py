@@ -252,7 +252,6 @@ class MultiheadAttentionBlock(nn.Module):
         q: Tensor,
         k: Tensor | None = None,
         v: Tensor | None = None,
-        train_size: int | None = None,
     ) -> Tensor:
         """The attention of ``q`` over ``k`` and ``v`` with its residual, then the feedforward with its: ``(..., tgt_len, d_model)``.
 
@@ -262,15 +261,9 @@ class MultiheadAttentionBlock(nn.Module):
             ``(..., tgt_len, d_model)``.
         k, v : Tensor | None, default=None
             ``(..., src_len, d_model)``; None uses ``q`` (self-attention).
-        train_size : int | None, default=None
-            When given, K/V are the first ``train_size`` positions of ``q``
-            and ``k`` / ``v`` are ignored.
         """
-        if train_size is not None:
-            k = v = q[..., :train_size, :]
-        else:
-            k = q if k is None else k
-            v = q if v is None else v
+        k = q if k is None else k
+        v = q if v is None else v
         kv = kernels.norm(self.norm_kv, k)
         attn = self.attn(self._prenorm(q), kv, kv if v is k else kernels.norm(self.norm_kv, v))
         return self._finish(q, attn)
