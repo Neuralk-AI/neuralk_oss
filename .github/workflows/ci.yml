@@ -37,9 +37,6 @@ jobs:
   test:
     name: test (Python ${{ matrix.python }}, torch ${{ matrix.torch }})
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # Codecov upload by OIDC
     strategy:
       fail-fast: false
       matrix:
@@ -80,11 +77,11 @@ jobs:
         run: pytest
       - if: ${{ matrix.coverage }}
         run: pytest --cov=neuralk_oss --cov-report=xml
-      # On a pull request from a fork, the action uploads without a token.
+      # A fork's pull request gets no secret: the action then uploads without a token.
       - if: ${{ matrix.coverage }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          use_oidc: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   lowest-direct:
     name: test (Python 3.11, lowest direct dependencies)
