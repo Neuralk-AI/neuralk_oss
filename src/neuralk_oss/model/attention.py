@@ -179,7 +179,7 @@ class MultiheadAttention(nn.MultiheadAttention):
     def _core(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
         """SDPA over the flattened batch dims, in slices FlashAttention takes: ``(..., nh, tgt_len, hs)``."""
         shape = q.shape
-        q, k, v = (t.reshape(-1, *t.shape[-3:]) for t in (q, k, v))
+        q, k, v = (t.reshape(t.shape[:-3].numel(), *t.shape[-3:]) for t in (q, k, v))
         if q.shape[0] <= FLASH_MAX_SEQUENCES:
             out = self._sdpa(q, k, v)
         else:
