@@ -4,7 +4,6 @@
 """Forecasting: Seldon's regressor on time series, through TabPFN-TS's time features."""
 
 from neuralk_oss.forecasting.features import (
-    AdditionalCalendarFeature,
     AutoSeasonalFeature,
     CalendarFeature,
     FeatureGenerator,
@@ -19,7 +18,6 @@ from neuralk_oss.forecasting.forecaster import DEFAULT_QUANTILES, SeldonForecast
 
 __all__ = [
     "DEFAULT_QUANTILES",
-    "AdditionalCalendarFeature",
     "AutoSeasonalFeature",
     "CalendarFeature",
     "FeatureGenerator",
