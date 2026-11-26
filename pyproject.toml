@@ -11,21 +11,27 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Neuralk-AI" }]
 requires-python = ">=3.11"
+# CI's lowest-direct job tests these lower bounds, on Python 3.11.
 dependencies = [
-    "huggingface_hub",
-    "numpy",
+    "huggingface_hub>=0.25",
+    # pyarrow, through structured-data-models, needs NumPy 2 at import.
+    "numpy>=2",
     "pandas>=2.2,<3",
     "pydantic>=2",
     "pyyaml",
-    "safetensors",
+    "safetensors>=0.2.6",
     # The forecaster's seasonal-period detection (scipy.fft, scipy.signal.find_peaks).
-    "scipy",
+    "scipy>=1.13",
     # Pinned: the preprocessing and ensembling Seldon was evaluated with.
     "structured-data-models==0.2.1",
     "torch>=2.7",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
@@ -35,6 +41,7 @@ Repository = "https://github.com/Neuralk-AI/neuralk_oss"
 [dependency-groups]
 dev = [
     "pytest>=8",
+    "pytest-cov>=7.1.0",
     "ruff>=0.6",
 ]
 

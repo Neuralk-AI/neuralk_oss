@@ -1,0 +1,94 @@
+# Lint and tests, on CPU. torch's CPU build comes from PyTorch's index and is
+# installed here only: `uv sync` would install the CUDA build of uv.lock. The
+# test matrix holds the other packages at the versions of uv.lock; the
+# lowest-direct job tests the lower bounds of pyproject.toml instead.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - run: uvx pre-commit run --all-files --show-diff-on-failure
+
+  test:
+    name: test (Python ${{ matrix.python }}, torch ${{ matrix.torch }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Codecov upload by OIDC
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.14"]
+        torch: ["2.7", "latest"]
+        exclude:
+          # torch 2.7 has no wheels past Python 3.13.
+          - python: "3.14"
+            torch: "2.7"
+        include:
+          - python: "3.14"
+            torch: "latest"
+            coverage: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ matrix.python }}
+          activate-environment: true
+          enable-cache: true
+          cache-suffix: torch-${{ matrix.torch }}
+      - name: Install
+        env:
+          TORCH: ${{ matrix.torch }}
+        run: |
+          uv export --quiet --locked --no-emit-project --no-emit-package torch --no-hashes \
+            -o "$RUNNER_TEMP/constraints.txt"
+          spec=torch
+          if [ "$TORCH" != latest ]; then spec="torch==$TORCH.*"; fi
+          uv pip install --torch-backend cpu -c "$RUNNER_TEMP/constraints.txt" "$spec" -e . --group dev
+      - if: ${{ !matrix.coverage }}
+        run: pytest
+      - if: ${{ matrix.coverage }}
+        run: pytest --cov=neuralk_oss --cov-report=xml
+      # On a pull request from a fork, the action uploads without a token.
+      - if: ${{ matrix.coverage }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          use_oidc: true
+
+  lowest-direct:
+    name: test (Python 3.11, lowest direct dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.11"
+          activate-environment: true
+          enable-cache: true
+          cache-suffix: lowest-direct
+      - run: uv pip install --resolution lowest-direct --torch-backend cpu -e . --group dev
+      - run: pytest
