@@ -1,7 +1,8 @@
 # Lint and tests, on CPU. torch's CPU build comes from PyTorch's index and is
 # installed here only: `uv sync` would install the CUDA build of uv.lock. The
-# test matrix holds the other packages at the versions of uv.lock; the
-# lowest-direct job tests the lower bounds of pyproject.toml instead.
+# test matrix holds the other packages at the versions of uv.lock (the weekly
+# run takes the latest of every one); the lowest-direct job tests the lower
+# bounds of pyproject.toml instead.
 name: CI
 
 on:
@@ -9,6 +10,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Weekly on main (Monday): torch and the other dependencies release without a
+  # commit here, so a breaking release shows in this run first.
+  schedule:
+    - cron: "0 3 * * 1"
 
 permissions:
   contents: read
@@ -62,8 +67,12 @@ jobs:
         env:
           TORCH: ${{ matrix.torch }}
         run: |
-          uv export --quiet --locked --no-emit-project --no-emit-package torch --no-hashes \
-            -o "$RUNNER_TEMP/constraints.txt"
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            : > "$RUNNER_TEMP/constraints.txt"
+          else
+            uv export --quiet --locked --no-emit-project --no-emit-package torch --no-hashes \
+              -o "$RUNNER_TEMP/constraints.txt"
+          fi
           spec=torch
           if [ "$TORCH" != latest ]; then spec="torch==$TORCH.*"; fi
           uv pip install --torch-backend cpu -c "$RUNNER_TEMP/constraints.txt" "$spec" -e . --group dev
