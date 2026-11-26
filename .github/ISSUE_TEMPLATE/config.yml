@@ -1,0 +1,6 @@
+# Blank issues stay enabled for questions and documentation, which neither form covers.
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Neuralk-AI/neuralk_oss/security/advisories/new
+    about: Report it privately, not in a public issue (see SECURITY.md).
