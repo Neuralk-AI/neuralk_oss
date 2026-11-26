@@ -227,6 +227,6 @@ See [CONTRIBUTING.md](https://github.com/Neuralk-AI/neuralk_oss/blob/main/CONTRI
 ## License
 
 The code is under [Apache 2.0](https://github.com/Neuralk-AI/neuralk_oss/blob/main/LICENSE). The weights, in the Hugging Face
-repositories, come under their own license, the Seldon Model License Agreement
+repositories, come under their own licenses
 ([`seldon`](https://huggingface.co/Neuralk-AI/seldon/blob/main/LICENSE.md),
 [`seldon-mini`](https://huggingface.co/Neuralk-AI/seldon-mini/blob/main/LICENSE.md)).
