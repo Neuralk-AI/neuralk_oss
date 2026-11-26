@@ -8,7 +8,7 @@ abstract: >-
   context, and new rows are classified, or their target estimated, in one
   forward pass, with no gradient step. Seldon's regressor also runs time-series
   forecasting through the TabPFN-TS pipeline. The model weights, on Hugging
-  Face, come under their own license, the Seldon Model License Agreement.
+  Face, come under their own licenses, given in each model's repository.
 authors:
   - name: Neuralk-AI
 license: Apache-2.0
