@@ -1,4 +1,4 @@
-![Neuralk, the predictive AI company](assets/banner.png)
+![Neuralk, the predictive AI company](https://raw.githubusercontent.com/Neuralk-AI/neuralk_oss/main/assets/banner.png)
 
 # Neuralk OSS
 
@@ -204,7 +204,7 @@ clf = SeldonClassifier.from_config(
 )  # keyword arguments override the file
 ```
 
-[`template.yaml`](src/neuralk_oss/configs/template.yaml), packaged next to
+[`template.yaml`](https://github.com/Neuralk-AI/neuralk_oss/blob/main/src/neuralk_oss/configs/template.yaml), packaged next to
 them, lists every argument a config can set, at its default, with what
 it does: copy it and keep the keys you change. Keys a config leaves out take
 the model's own settings for `seldon` and `seldon-mini`, the constructor's
@@ -222,11 +222,11 @@ logits = model.predict_query(X_query, context, categorical_mask)  # (B, T_query,
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md): layout, development and versions.
+See [CONTRIBUTING.md](https://github.com/Neuralk-AI/neuralk_oss/blob/main/CONTRIBUTING.md): layout, development and versions.
 
 ## License
 
-The code is under [Apache 2.0](LICENSE). The weights, in the Hugging Face
+The code is under [Apache 2.0](https://github.com/Neuralk-AI/neuralk_oss/blob/main/LICENSE). The weights, in the Hugging Face
 repositories, come under their own license, the Seldon Model License Agreement
 ([`seldon`](https://huggingface.co/Neuralk-AI/seldon/blob/main/LICENSE.md),
 [`seldon-mini`](https://huggingface.co/Neuralk-AI/seldon-mini/blob/main/LICENSE.md)).
