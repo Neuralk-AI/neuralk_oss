@@ -46,7 +46,6 @@ def tolerance(test: str, device: str) -> dict[str, float]:
         return {"rtol": 1e-4, "atol": 1e-5}
     # About 4x the float16 drift from float32 on an H100: 2.3e-4 on probabilities,
     # 2.6e-3 on logits, which leaves room for other GPUs.
-    # TODO: the regressor's (quantiles of a target of spread ~1.5), to measure on an H100.
     return {"rtol": 0.0, "atol": {"classifier": 1e-3, "model": 1e-2, "regressor": 2e-2}[test]}
 
 

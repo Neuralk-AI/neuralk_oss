@@ -252,6 +252,9 @@ def test_from_config_takes_its_own_task(tmp_path):
     path.write_text(f"checkpoint: {TINY}\nclip_margin: 0.1\n")
     with pytest.raises(ValueError, match="SeldonRegressor.from_config"):
         SeldonClassifier.from_config(path)
+    path.write_text("n_estimators: 2\n")
+    with pytest.raises(ValueError, match="names no checkpoint"):
+        SeldonRegressor.from_config(path)
 
 
 def test_template_config_lists_the_regressor_argument(tiny_regressor, tmp_path, monkeypatch):
@@ -283,6 +286,15 @@ def test_to_before_fit(tiny_regressor):
     X, y = _frame(80)
     reg = SeldonRegressor(tiny_regressor, n_estimators=2, device="cpu").to("cpu")
     assert reg.fit(X[:60], y[:60]).predict(X[60:]).shape == (20,)
+
+
+def test_to_after_fit(tiny_regressor):
+    reg, X_test, _ = _fit(tiny_regressor)
+    before = reg.predict_quantiles(X_test)
+    # The fitted preprocessing and cached context move with it: the same quantiles.
+    np.testing.assert_array_equal(reg.to("cpu").predict_quantiles(X_test), before)
+    expected = "cuda" if torch.cuda.is_available() else "cpu"
+    assert SeldonRegressor(tiny_regressor).device.type == expected
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="moves a CUDA-fitted regressor")
