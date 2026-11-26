@@ -69,7 +69,7 @@ git tag v0.1.1 && git push origin v0.1.1
 ```
 
 The `Release` workflow (`.github/workflows/release.yml`) checks the tag matches
-`pyproject.toml` and publishes to PyPI, once `paulnovello-nk` or `nicolasAtza`
-approves the run (required reviewers of the `pypi` environment). Running it by
+`pyproject.toml` and publishes to PyPI, once a maintainer approves the run
+(required reviewers of the `pypi` environment). Running it by
 hand from the Actions tab publishes to TestPyPI instead, with no approval. A
 version is uploaded once per index.

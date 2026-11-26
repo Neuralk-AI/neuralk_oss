@@ -281,7 +281,7 @@ class SeldonForecaster:
         x_query: pd.DataFrame | pd.DatetimeIndex,
         quantiles: Sequence[float] = DEFAULT_QUANTILES,
     ) -> pd.DataFrame:
-        """sdm's forecasting protocol (as ``KumoForecast``): the rows are time steps, ``y_context`` the targets, ``x_query``'s rows the horizon.
+        """sdm's forecasting protocol: the rows are time steps, ``y_context`` the targets, ``x_query``'s rows the horizon.
 
         Parameters
         ----------

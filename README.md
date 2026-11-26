@@ -1,10 +1,13 @@
-![Neuralk, the predictive AI company](assets/banner.png)
+![Neuralk, the predictive AI company](https://raw.githubusercontent.com/Neuralk-AI/neuralk_oss/main/assets/banner.png)
 
 # Neuralk OSS
 
 [![CI](https://github.com/Neuralk-AI/neuralk_oss/actions/workflows/ci.yml/badge.svg)](https://github.com/Neuralk-AI/neuralk_oss/actions/workflows/ci.yml) [![Codecov](https://codecov.io/gh/Neuralk-AI/neuralk_oss/graph/badge.svg)](https://codecov.io/gh/Neuralk-AI/neuralk_oss) [![PyPI](https://img.shields.io/pypi/v/neuralk-oss)](https://pypi.org/project/neuralk-oss/) [![Python](https://img.shields.io/pypi/pyversions/neuralk-oss)](https://pypi.org/project/neuralk-oss/) [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Neuralk-AI/neuralk_oss/blob/main/LICENSE) [![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Neuralk--AI%2Fseldon-FFD21E?logo=huggingface)](https://huggingface.co/Neuralk-AI/seldon)
 
 Neuralk-AI open-source models.
+
+> [!NOTE]
+> This code is maintained by Neuralk on a sporadic, best-effort basis, not as a priority.
 
 ## Seldon
 
@@ -58,8 +61,10 @@ weights of checkpoint `name` are `name.safetensors`. `from_pretrained` takes:
   `task` picks the checkpoint in a directory of several (`SeldonClassifier`
   passes `"classification"`, `SeldonRegressor` `"regression"`).
 
-The repositories are private for now: log in once with an account that can read
-them (`hf auth login`), or pass `token=...` to `from_pretrained`.
+The weights come under their own license, which each repository's page asks
+to accept: accept it once with a Hugging Face account (access is granted at
+once), then log in with it (`hf auth login`) or pass `token=...` to
+`from_pretrained`.
 
 Column types are inferred (categorical columns are embedded as such, NaNs are
 kept for the model's own imputation), each of the `n_estimators` ensemble
@@ -121,10 +126,9 @@ quantiles. The packaged configs `seldon-forecaster` and
 `seldon-mini-forecaster` take the regressors' settings without their clamp to
 the context's range (`clip_margin`), which would keep a trend inside it.
 
-`forecast` follows sdm's forecasting protocol (as its `KumoForecast`): the
-covariates `x_context`, the targets `y_context` (one or more, each forecast on
-its own) and the horizon `x_query`, on timestamps, return per target `t` the
-columns `t` and `t__q<100 x level>`:
+`forecast` takes the covariates `x_context`, the targets `y_context` (one or
+more, each forecast on its own) and the horizon `x_query`, on timestamps, and
+returns per target `t` the columns `t` and `t__q<100 x level>`:
 
 ```python
 out = fc.forecast(x_context, y_context, x_query, quantiles=[0.1, 0.5, 0.9])
@@ -202,7 +206,7 @@ clf = SeldonClassifier.from_config(
 )  # keyword arguments override the file
 ```
 
-[`template.yaml`](src/neuralk_oss/configs/template.yaml), packaged next to
+[`template.yaml`](https://github.com/Neuralk-AI/neuralk_oss/blob/main/src/neuralk_oss/configs/template.yaml), packaged next to
 them, lists every argument a config can set, at its default, with what
 it does: copy it and keep the keys you change. Keys a config leaves out take
 the model's own settings for `seldon` and `seldon-mini`, the constructor's
@@ -220,8 +224,11 @@ logits = model.predict_query(X_query, context, categorical_mask)  # (B, T_query,
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md): layout, development and versions.
+See [CONTRIBUTING.md](https://github.com/Neuralk-AI/neuralk_oss/blob/main/CONTRIBUTING.md): layout, development and versions.
 
 ## License
 
-[Apache 2.0](LICENSE).
+The code is under [Apache 2.0](https://github.com/Neuralk-AI/neuralk_oss/blob/main/LICENSE). The weights, in the Hugging Face
+repositories, come under their own licenses
+([`seldon`](https://huggingface.co/Neuralk-AI/seldon/blob/main/LICENSE.md),
+[`seldon-mini`](https://huggingface.co/Neuralk-AI/seldon-mini/blob/main/LICENSE.md)).

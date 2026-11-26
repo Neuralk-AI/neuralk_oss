@@ -177,7 +177,7 @@ class Seldon(nn.Module):
     def _context_steps(self, X: Tensor) -> tuple[int, int, int]:
         """Rows per slice of the cell embedding, columns per slice of a column block, rows per slice of a row block, for the context ``X`` ``(B, T, H)``.
 
-        As sdm slices Kumo Tabular's stages: each slice within sdm's chunk
+        As sdm slices the model's stages: each slice within sdm's chunk
         memory limit (a share of the GPU), by the same per-item estimates, and
         within the memory still free; everything at once off CUDA.
         """
